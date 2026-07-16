@@ -5,13 +5,14 @@ Monitors https://www.go-manga.com/manga/?order=update for new chapter updates
 and sends notifications via Telegram.
 """
 
+import html as html_lib
 import json
 import os
 import re
 import sys
 import time
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urljoin
@@ -30,6 +31,8 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 BASE_URL = "https://www.go-manga.com"
 LIST_URL = f"{BASE_URL}/manga/?order=update"
 STATE_FILE = Path(__file__).parent / "monitor_state.json"
+BOOKMARKS_FILE = Path(__file__).parent / "bookmarks.json"
+BOT_STATE_FILE = Path(__file__).parent / "bot_state.json"
 REQUEST_TIMEOUT = 30
 REQUEST_DELAY = 1.0  # Be polite to the server
 
@@ -66,6 +69,7 @@ class Manga:
     type_: str  # MANHWA, MANGA, MANHUA
     status: str  # Ongoing, Completed
     rating: str
+    cover_image: str
     chapters: list[Chapter]
 
     def to_dict(self):
@@ -85,6 +89,7 @@ class Manga:
             type_=d["type_"],
             status=d["status"],
             rating=d["rating"],
+            cover_image=d.get("cover_image", ""),
             chapters=chapters,
         )
 
@@ -125,6 +130,63 @@ class StateManager:
 
     def get_all_tracked(self) -> dict:
         return self.data
+
+
+# ============== BOOKMARKS ==============
+class BookmarkManager:
+    """Stores the user's favourite manga in bookmarks.json."""
+
+    def __init__(self, path: Path):
+        self.path = path
+        self.data = self._load()
+
+    def _load(self) -> dict:
+        if self.path.exists():
+            try:
+                with open(self.path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                return {}
+        return {}
+
+    def save(self):
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(self.data, f, ensure_ascii=False, indent=2)
+
+    def add(self, url: str, title: str) -> bool:
+        existed = url in self.data
+        self.data[url] = {"title": title}
+        self.save()
+        return not existed  # True if newly added
+
+    def remove(self, url: str) -> bool:
+        if url in self.data:
+            del self.data[url]
+            self.save()
+            return True
+        return False
+
+    def is_bookmarked(self, url: str) -> bool:
+        return url in self.data
+
+    def all(self) -> dict:
+        return self.data
+
+
+# ============== BOT STATE (Telegram offset) ==============
+def load_bot_state(path: Path) -> dict:
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def save_bot_state(path: Path, data: dict):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 # ============== SCRAPER ==============
@@ -230,86 +292,71 @@ class GoMangaScraper:
 
         return datetime.now().strftime("%Y-%m-%d")
 
+    @staticmethod
+    def _extract_img_src(img) -> str:
+        """Get the real image URL, accounting for lazy-loading attributes."""
+        if not img:
+            return ""
+        for attr in ("data-src", "data-lazy-src", "data-original", "src"):
+            val = img.get(attr, "")
+            # Skip 1x1 placeholder / data-uri lazy placeholders
+            if val and not val.startswith("data:") and "close.png" not in val:
+                return urljoin(BASE_URL, val)
+        return ""
+
     def scrape_list_page(self) -> list[dict]:
-        """Scrape the manga listing page sorted by update"""
+        """Scrape the manga listing page sorted by update.
+
+        Uses the theme's structured markup (div.bsx) so we can reliably grab
+        the title, type, latest chapter, rating and cover image for each item.
+        """
         print(f"[INFO] Fetching list page: {LIST_URL}")
         soup = self._get(LIST_URL)
         if not soup:
             return []
 
         manga_list = []
-        # The manga items are links directly under the listing area
-        # From browser inspection, they're <a> tags with full manga info in text
-        links = soup.find_all("a", href=True)
-
-        for link in links:
-            href = link.get("href", "")
-            if not href:
+        for item in soup.select("div.bsx"):
+            link = item.find("a", href=True)
+            if not link:
                 continue
-
-            # Only process manga detail links (not chapter links)
-            full_url = urljoin(BASE_URL, href)
+            full_url = urljoin(BASE_URL, link.get("href", ""))
             if not full_url.startswith(BASE_URL):
                 continue
 
-            # Skip chapter links - they have patterns like /manga-name-ตอนที่-44/
-            # Manga links are like /manga-name/ or /manga-name
-            # But from browser, the listing shows links like /became-rogue-first-prince-.../
-            # which are actually the manga detail pages
-            
-            # Skip obvious chapter links
-            if re.search(r"(ตอนที่|Chapter|EP)\s*\d+", href):
-                continue
-            
-            # Skip navigation/pagination links
-            if href in ["/manga/?order=update", "/manga/", "/", "/genres/"] or href.startswith("/genres/") or href.startswith("/page/") or href.startswith("?page="):
+            # Title: prefer the .tt block, fall back to the link title attribute
+            title_el = item.select_one("div.tt")
+            title = title_el.get_text(strip=True) if title_el else link.get("title", "").strip()
+            title = re.sub(r"\s+", " ", title).strip()
+            if not title or len(title) < 2:
                 continue
 
-            text = link.get_text(strip=True)
-            if not text or len(text) < 5:
-                continue
+            # Type (Manhwa / Manga / Manhua)
+            type_el = item.select_one("span.typename")
+            type_ = type_el.get_text(strip=True).upper() if type_el else "UNKNOWN"
 
-            # Extract info from text
-            # Format: "MANHWA COLOR Title ตอนที่ 44 ⭐⭐⭐⭐⭐ ⭐⭐⭐⭐⭐ 7.4"
-            type_match = re.search(r"(MANHWA|MANGA|MANHUA)", text, re.IGNORECASE)
-            type_ = type_match.group(1).upper() if type_match else "UNKNOWN"
+            # Latest chapter from the .epxs badge (e.g. "ตอนที่ 15")
+            ep_el = item.select_one("div.epxs")
+            ep_text = ep_el.get_text(strip=True) if ep_el else ""
+            latest_chapter = self._parse_chapter_number(ep_text)
 
-            # Extract title (everything before chapter info)
-            title = text
-            chapter_match = re.search(r"(ตอนที่\s*\d+|Chapter\s*\d+|EP\s*\d+)", text)
-            if chapter_match:
-                title = text[:chapter_match.start()].strip()
+            # Rating from the .numscore element
+            score_el = item.select_one("div.numscore")
+            rating = score_el.get_text(strip=True) if score_el else "N/A"
 
-            # Extract latest chapter
-            latest_chapter = ""
-            latest_chapter_url = ""
-            if chapter_match:
-                latest_chapter = self._parse_chapter_number(chapter_match.group(1))
-                latest_chapter_url = full_url  # This is actually the manga detail URL
+            # Cover image
+            cover_image = self._extract_img_src(item.find("img"))
 
-            # Extract rating (at the end of text)
-            rating_match = re.search(r"(\d+\.\d+)$", text)
-            rating = rating_match.group(1) if rating_match else "N/A"
-
-            # Clean up title - remove type badges
-            title = re.sub(r"^(MANHWA|MANGA|MANHUA)\s*(?:🔥|COLOR)?\s*", "", title, flags=re.IGNORECASE).strip()
-
-            if title and len(title) > 2:
-                # Extract date if present in text
-                latest_chapter_date = ""
-                date_match = re.search(r"(\d{1,2}\s+(?:มกราคม|กุมภาพันธ์|มีนาคม|เมษายน|พฤษภาคม|มิถุนายน|กรกฎาคม|สิงหาคม|กันยายน|ตุลาคม|พฤศจิกายน|ธันวาคม|January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})", text)
-                if not date_match:
-                    date_match = re.search(r"(\d{4}-\d{2}-\d{2})", text)
-                if date_match:
-                    latest_chapter_date = self._parse_date(date_match.group(1))
-
-                manga_list.append({
-                    "title": title,
-                    "url": full_url,
-                    "latest_chapter": latest_chapter,
-                    "latest_chapter_url": latest_chapter_url,
-                    "latest_chapter_date": latest_chapter_date,
-                })
+            manga_list.append({
+                "title": title,
+                "url": full_url,
+                "latest_chapter": latest_chapter,
+                "latest_chapter_url": full_url,
+                "latest_chapter_date": "",
+                "type_": type_,
+                "rating": rating,
+                "cover_image": cover_image,
+            })
 
         # Deduplicate by URL
         seen = set()
@@ -349,48 +396,57 @@ class GoMangaScraper:
 
             # Extract rating
             rating = "N/A"
-            rating_elem = soup.find(text=re.compile(r"\d\.\d"))
-            if rating_elem:
-                match = re.search(r"(\d\.\d)", str(rating_elem))
-                if match:
-                    rating = match.group(1)
+            score_el = soup.select_one("div.num, div.numscore, span.num")
+            if score_el:
+                m = re.search(r"(\d+(?:\.\d+)?)", score_el.get_text(strip=True))
+                if m:
+                    rating = m.group(1)
+            if rating == "N/A":
+                rating_elem = soup.find(text=re.compile(r"\d\.\d"))
+                if rating_elem:
+                    match = re.search(r"(\d\.\d)", str(rating_elem))
+                    if match:
+                        rating = match.group(1)
 
-            # Extract chapters - look for chapter links in the page
+            # Cover image (thumbnail on the detail page)
+            cover_image = self._extract_img_src(
+                soup.select_one("div.thumb img")
+                or soup.select_one("img.wp-post-image")
+                or soup.select_one("div.thumbook img")
+            )
+
+            # Extract chapters from the theme's chapter list (#chapterlist li)
             chapters = []
+            chapter_items = soup.select("#chapterlist li") or soup.select("div.eplister ul li")
 
-            # Chapter links have patterns like /manga-name-ตอนที่-44/ or /manga-name-44/
-            # They also appear as text "ตอนที่ 44" in link text
-            chapter_links = soup.find_all("a", href=True)
-            for link in chapter_links:
-                href = link.get("href", "")
-                text = link.get_text(strip=True)
-
-                # Skip non-chapter links
-                if not (href and ("ตอนที่" in text or "chapter" in href.lower() or "ep" in href.lower() or "ตอน" in text)):
-                    continue
-
-                # Extract chapter number from text or href
-                chapter_num = self._parse_chapter_number(text)
-                if not chapter_num:
-                    chapter_num = self._parse_chapter_number(href)
-                if not chapter_num:
-                    continue
-
-                chapter_url = urljoin(BASE_URL, href)
-            
-                # Try to find date near this link
-                date = ""
-                parent = link.parent
-                if parent:
-                    parent_text = parent.get_text(strip=True)
-                    date = self._parse_date(parent_text)
-
-                chapters.append(Chapter(
-                    number=chapter_num,
-                    title=text,
-                    url=chapter_url,
-                    date=date
-                ))
+            if chapter_items:
+                for li in chapter_items:
+                    a = li.find("a", href=True)
+                    if not a:
+                        continue
+                    text = li.get_text(" ", strip=True)
+                    chapter_num = self._parse_chapter_number(text) or self._parse_chapter_number(a.get("href", ""))
+                    if not chapter_num:
+                        continue
+                    chapters.append(Chapter(
+                        number=chapter_num,
+                        title=f"ตอนที่ {chapter_num}",
+                        url=urljoin(BASE_URL, a.get("href", "")),
+                        date=self._parse_date(text),
+                    ))
+            else:
+                # Fallback: scan all links for chapter patterns
+                for link in soup.find_all("a", href=True):
+                    href = link.get("href", "")
+                    text = link.get_text(strip=True)
+                    if not (href and ("ตอนที่" in text or "chapter" in href.lower())):
+                        continue
+                    chapter_num = self._parse_chapter_number(text) or self._parse_chapter_number(href)
+                    if not chapter_num:
+                        continue
+                    date = self._parse_date(link.parent.get_text(strip=True)) if link.parent else ""
+                    chapters.append(Chapter(number=chapter_num, title=text,
+                                            url=urljoin(BASE_URL, href), date=date))
 
             # Deduplicate chapters
             seen = set()
@@ -419,12 +475,51 @@ class GoMangaScraper:
                 type_=type_,
                 status=status,
                 rating=rating,
+                cover_image=cover_image,
                 chapters=unique_chapters,
             )
 
+    @staticmethod
+    def _select_new_chapters(chapters, last_num, last_date: str, today: str) -> list:
+        """Decide which chapters count as "new".
+
+        Primary rule: a chapter is new if its update date is later than the
+        last update date we recorded, up to today. Chapter number is used as a
+        safeguard so we don't miss multiple chapters released on the same day
+        (go-manga often drops several at once) or when no date baseline exists.
+        """
+        result = []
+        for c in chapters:
+            if not c.number.isdigit():
+                continue
+            num = int(c.number)
+            # Ignore anomalous future-dated chapters
+            if c.date and c.date > today:
+                continue
+
+            is_new = False
+            if last_date:
+                if c.date and c.date > last_date:
+                    is_new = True  # updated after our last recorded date
+                elif c.date == last_date and last_num is not None and num > last_num:
+                    is_new = True  # same-day release we haven't seen yet
+                elif not c.date and last_num is not None and num > last_num:
+                    is_new = True  # no date on chapter, fall back to number
+            else:
+                # No date baseline yet -> pure number comparison
+                if last_num is not None and num > last_num:
+                    is_new = True
+
+            if is_new:
+                result.append(c)
+
+        result.sort(key=lambda c: int(c.number))
+        return result
+
     def check_updates(self, state: StateManager) -> list[dict]:
-        """Check for new chapters across all manga"""
+        """Check for new chapters across all manga (date-based detection)."""
         updates = []
+        today = date.today().isoformat()
 
         # Get list of manga from the update page
         manga_list = self.scrape_list_page()
@@ -437,54 +532,64 @@ class GoMangaScraper:
             if not latest_chapter:
                 continue
 
-            # Check if we have seen this chapter before
             last_chapter = state.get_last_chapter(manga_url)
 
             if last_chapter is None:
-                # First time seeing this manga - record current state
-                state.update_manga(manga_url, latest_chapter, manga_info.get("latest_chapter_date", ""), title)
+                # First time seeing this manga - record baseline, no notification
+                state.update_manga(manga_url, latest_chapter, "", title)
                 print(f"[INFO] First time tracking: {title} - Chapter {latest_chapter}")
                 continue
 
-            # Compare chapter numbers
+            # Parse chapter numbers for the cheap "should we look deeper?" gate
             try:
                 current_num = int(latest_chapter)
-                last_num = int(last_chapter)
-                if current_num > last_num:
-                    # New chapter(s) detected!
-                    # Get full detail to find all new chapters
-                    manga = self.scrape_manga_detail(manga_url)
-                    if manga:
-                        new_chapters = [c for c in manga.chapters if int(c.number) > last_num]
-                        new_chapters.sort(key=lambda c: int(c.number))
-
-                        updates.append({
-                            "manga": manga,
-                            "new_chapters": new_chapters,
-                            "previous_chapter": last_chapter,
-                        })
-                        print(f"[UPDATE] {title}: {len(new_chapters)} new chapter(s) - {last_chapter} -> {latest_chapter}")
-
-                        # Update state to latest
-                        state.update_manga(manga_url, latest_chapter, manga_info.get("latest_chapter_date", ""), title)
-
-                    time.sleep(REQUEST_DELAY)  # Be polite
-                elif current_num == last_num:
-                    # Same chapter - check if date updated (re-upload)
-                    last_date = state.get_last_chapter_date(manga_url)
-                    current_date = manga_info.get("latest_chapter_date", "")
-                    if current_date and last_date and current_date != last_date:
-                        print(f"[INFO] {title}: Chapter {latest_chapter} re-uploaded ({last_date} -> {current_date})")
-                        state.update_manga(manga_url, latest_chapter, current_date, title)
-                else:
-                    # Our state is ahead (shouldn't happen normally)
-                    print(f"[WARN] State ahead for {title}: state={last_chapter}, site={latest_chapter}")
-                    state.update_manga(manga_url, latest_chapter, manga_info.get("latest_chapter_date", ""), title)
             except ValueError:
-                # Non-numeric chapter, compare as strings
-                if latest_chapter != last_chapter:
-                    print(f"[UPDATE] {title}: Chapter changed {last_chapter} -> {latest_chapter}")
-                    state.update_manga(manga_url, latest_chapter, manga_info.get("latest_chapter_date", ""), title)
+                current_num = None
+            try:
+                last_num = int(last_chapter)
+            except (ValueError, TypeError):
+                last_num = None
+
+            # Only fetch the detail page when the list suggests something changed
+            if current_num is not None and last_num is not None and current_num <= last_num:
+                continue
+
+            manga = self.scrape_manga_detail(manga_url)
+            if not manga:
+                continue
+
+            # Fill any gaps using the richer list-page data
+            if not manga.cover_image:
+                manga.cover_image = manga_info.get("cover_image", "")
+            if manga.type_ == "UNKNOWN":
+                manga.type_ = manga_info.get("type_", "UNKNOWN")
+            if manga.rating in ("N/A", ""):
+                manga.rating = manga_info.get("rating", "N/A")
+            # The list-page title is the reliable one; the detail page <h1> is
+            # the site's SEO header, not the manga name.
+            if manga_info.get("title"):
+                manga.title = manga_info["title"]
+
+            last_date = state.get_last_chapter_date(manga_url) or ""
+            new_chapters = self._select_new_chapters(manga.chapters, last_num, last_date, today)
+
+            # Always advance the stored baseline to the newest chapter + date we saw
+            newest_date = max((c.date for c in manga.chapters if c.date), default=last_date)
+            new_latest = manga.latest_chapter or latest_chapter
+
+            if new_chapters:
+                updates.append({
+                    "manga": manga,
+                    "new_chapters": new_chapters,
+                    "previous_chapter": last_chapter,
+                })
+                print(f"[UPDATE] {title}: {len(new_chapters)} new chapter(s) "
+                      f"({last_chapter}/{last_date or '-'} -> {new_latest}/{newest_date or '-'})")
+            else:
+                print(f"[INFO] {title}: number changed but no new dated chapters")
+
+            state.update_manga(manga_url, new_latest, newest_date, title)
+            time.sleep(REQUEST_DELAY)  # Be polite
 
         return updates
 
@@ -496,18 +601,32 @@ class TelegramNotifier:
         self.chat_id = chat_id
         self.api_url = f"https://api.telegram.org/bot{bot_token}"
 
-    def send_message(self, text: str, parse_mode: str = "HTML") -> bool:
-        if not self.bot_token or not self.chat_id:
+    @staticmethod
+    def bookmark_keyboard(manga_url: str, is_bookmarked: bool) -> dict:
+        """Inline keyboard with a single add/remove-bookmark button."""
+        slug = manga_url.rstrip("/").split("/")[-1]
+        if is_bookmarked:
+            btn = {"text": "❌ เอาออกจากเรื่องโปรด", "callback_data": f"u:{slug}"[:64]}
+        else:
+            btn = {"text": "📌 เพิ่มเป็นเรื่องโปรด", "callback_data": f"b:{slug}"[:64]}
+        return {"inline_keyboard": [[btn]]}
+
+    def send_message(self, text: str, parse_mode: str = "HTML", chat_id: str = None,
+                     reply_markup: dict = None) -> bool:
+        target = chat_id or self.chat_id
+        if not self.bot_token or not target:
             print("[WARN] Telegram not configured, skipping notification")
             return False
 
         url = f"{self.api_url}/sendMessage"
         payload = {
-            "chat_id": self.chat_id,
+            "chat_id": target,
             "text": text,
             "parse_mode": parse_mode,
             "disable_web_page_preview": True,
         }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
 
         try:
             resp = requests.post(url, json=payload, timeout=10)
@@ -515,6 +634,86 @@ class TelegramNotifier:
             return True
         except Exception as e:
             print(f"[ERROR] Failed to send Telegram message: {e}", file=sys.stderr)
+            return False
+
+    def register_commands(self) -> bool:
+        """Register the bot's command menu so users see it when typing '/'."""
+        if not self.bot_token:
+            return False
+        commands = [
+            {"command": "bookmark", "description": "เพิ่มเรื่องโปรด (เช่น /bookmark painter)"},
+            {"command": "unbookmark", "description": "เอาเรื่องออกจากโปรด"},
+            {"command": "list", "description": "ดูรายการเรื่องโปรดทั้งหมด"},
+            {"command": "help", "description": "แสดงคำสั่งทั้งหมด"},
+        ]
+        try:
+            resp = requests.post(f"{self.api_url}/setMyCommands",
+                                 json={"commands": commands}, timeout=15)
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to register commands: {e}", file=sys.stderr)
+            return False
+
+    def get_updates(self, offset: Optional[int] = None) -> list:
+        """Fetch new messages sent to the bot (for command handling)."""
+        if not self.bot_token:
+            return []
+        params = {"timeout": 0}
+        if offset is not None:
+            params["offset"] = offset
+        try:
+            resp = requests.get(f"{self.api_url}/getUpdates", params=params, timeout=20)
+            resp.raise_for_status()
+            return resp.json().get("result", [])
+        except Exception as e:
+            print(f"[ERROR] Failed to getUpdates: {e}", file=sys.stderr)
+            return []
+
+    def send_photo(self, photo_url: str, caption: str, parse_mode: str = "HTML",
+                   reply_markup: dict = None) -> bool:
+        """Send an image card (cover) with an HTML caption."""
+        if not self.bot_token or not self.chat_id:
+            print("[WARN] Telegram not configured, skipping photo")
+            return False
+
+        url = f"{self.api_url}/sendPhoto"
+        payload = {
+            "chat_id": self.chat_id,
+            "photo": photo_url,
+            "caption": caption[:1024],  # Telegram caption hard limit
+            "parse_mode": parse_mode,
+        }
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
+        try:
+            resp = requests.post(url, json=payload, timeout=15)
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to send Telegram photo: {e}", file=sys.stderr)
+            return False
+
+    def answer_callback(self, callback_id: str, text: str = "") -> bool:
+        """Acknowledge a button tap (shows a toast to the user)."""
+        try:
+            requests.post(f"{self.api_url}/answerCallbackQuery",
+                          json={"callback_query_id": callback_id, "text": text},
+                          timeout=10)
+            return True
+        except Exception as e:
+            print(f"[ERROR] answerCallbackQuery: {e}", file=sys.stderr)
+            return False
+
+    def edit_reply_markup(self, chat_id: str, message_id: int, reply_markup: dict) -> bool:
+        """Update the inline keyboard on an already-sent message."""
+        try:
+            requests.post(f"{self.api_url}/editMessageReplyMarkup",
+                          json={"chat_id": chat_id, "message_id": message_id,
+                                "reply_markup": reply_markup}, timeout=10)
+            return True
+        except Exception as e:
+            print(f"[ERROR] editMessageReplyMarkup: {e}", file=sys.stderr)
             return False
 
     def send_startup_message(self, tracked_count: int) -> bool:
@@ -591,9 +790,72 @@ class TelegramNotifier:
 
         return "\n".join(lines)
 
+    def format_update_caption(self, update: dict) -> str:
+        """Compact card caption (used with sendPhoto). Kept under 1024 chars."""
+        manga = update["manga"]
+        new_chapters = update["new_chapters"]
+        prev_chapter = update.get("previous_chapter", "?")
+
+        type_emoji = {"MANHWA": "🇰🇷", "MANGA": "🇯🇵", "MANHUA": "🇨🇳"}.get(
+            manga.type_.upper(), "📖"
+        )
+        type_label = manga.type_.title() if manga.type_ != "UNKNOWN" else "Manga"
+        title = html_lib.escape(manga.title)
+        pin = "📌 " if update.get("is_bookmarked") else ""
+
+        lines = [
+            f"{pin}🔔 <b>อัปเดตใหม่!</b>" + ("  <i>(เรื่องโปรด)</i>" if pin else ""),
+            "",
+            f"📖 <b>{title}</b>",
+            f"{type_emoji} {type_label}  ·  ⭐ {manga.rating}",
+            "",
+            f"✨ <b>+{len(new_chapters)} ตอนใหม่</b>  (ตอนที่ {prev_chapter} → {manga.latest_chapter})",
+        ]
+
+        # List new chapters as clickable numbers. Cap the list so the caption
+        # stays well under Telegram's 1024-char limit.
+        max_show = 12
+        shown = new_chapters[-max_show:] if len(new_chapters) > max_show else new_chapters
+        links = [f'<a href="{c.url}">{c.number}</a>' for c in shown]
+        prefix = "📑 ตอนที่: "
+        if len(new_chapters) > max_show:
+            prefix = f"📑 ตอนล่าสุด {max_show} ตอน: "
+        lines.append(prefix + ", ".join(links))
+
+        latest = new_chapters[-1] if new_chapters else None
+        latest_date = f"  <i>({latest.date})</i>" if latest and latest.date else ""
+        lines += [
+            "",
+            f'🔗 <a href="{manga.url}"><b>อ่านต่อที่ Go-Manga</b></a>{latest_date}',
+        ]
+        return "\n".join(lines)
+
     def send_update(self, update: dict) -> bool:
-        message = self.format_update_message(update)
-        return self.send_message(message)
+        manga = update["manga"]
+        # Button to add/remove this manga from bookmarks straight from the card
+        markup = self.bookmark_keyboard(manga.url, update.get("is_bookmarked", False))
+        # Preferred: image card with the cover
+        if getattr(manga, "cover_image", ""):
+            caption = self.format_update_caption(update)
+            if self.send_photo(manga.cover_image, caption, reply_markup=markup):
+                return True
+            print("[WARN] Photo card failed, falling back to text message")
+        # Fallback: rich text message (no cover available)
+        return self.send_message(self.format_update_message(update), reply_markup=markup)
+
+    def send_favorites_summary(self, fav_updates: list) -> bool:
+        """Send a separate summary listing bookmarked manga that updated."""
+        if not fav_updates:
+            return False
+        lines = ["📌 <b>สรุปเรื่องโปรดที่อัปเดต</b>", ""]
+        for u in fav_updates:
+            m = u["manga"]
+            n = len(u["new_chapters"])
+            title = html_lib.escape(m.title)
+            lines.append(f'📖 <a href="{m.url}">{title}</a>')
+            lines.append(f"    └ +{n} ตอนใหม่ (ล่าสุด ตอนที่ {m.latest_chapter})")
+        lines += ["", f"⭐ ทั้งหมด {len(fav_updates)} เรื่อง  ·  ⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}"]
+        return self.send_message("\n".join(lines))
 
     def send_startup_message(self, tracked_count: int) -> bool:
         """Send startup notification"""
@@ -630,6 +892,153 @@ class TelegramNotifier:
         return self.send_message(message)
 
 
+# ============== TELEGRAM COMMANDS ==============
+HELP_TEXT = (
+    "🤖 <b>คำสั่ง Go-Manga Bot</b>\n"
+    "\n"
+    "📌 <b>/bookmark</b> &lt;ชื่อเรื่อง&gt; — เพิ่มเรื่องโปรด (ค้นจากชื่อ)\n"
+    "❌ <b>/unbookmark</b> &lt;ชื่อเรื่อง&gt; — เอาออกจากโปรด\n"
+    "📚 <b>/list</b> — ดูรายการเรื่องโปรดทั้งหมด\n"
+    "❓ <b>/help</b> — แสดงคำสั่งทั้งหมด\n"
+    "\n"
+    "<i>ตัวอย่าง:</i> <code>/bookmark painter</code>"
+)
+
+
+def _find_manga(state: StateManager, keyword: str) -> list:
+    """Return [(url, title)] of tracked manga whose title matches the keyword."""
+    kw = keyword.lower().strip()
+    out = []
+    for url, v in state.get_all_tracked().items():
+        title = v.get("title", "")
+        if kw in title.lower() or kw in url.lower():
+            out.append((url, title))
+    return out
+
+
+def _handle_command(cmd: str, arg: str, state: StateManager, bookmarks: BookmarkManager) -> str:
+    if cmd in ("start", "help"):
+        return HELP_TEXT
+
+    if cmd in ("list", "bookmarks"):
+        if not bookmarks.all():
+            return "📭 ยังไม่มีเรื่องโปรด\nใช้ <code>/bookmark ชื่อเรื่อง</code> เพื่อเพิ่ม"
+        lines = ["📌 <b>เรื่องโปรดของคุณ</b>", ""]
+        for i, (url, v) in enumerate(bookmarks.all().items(), 1):
+            lines.append(f'{i}. <a href="{url}">{html_lib.escape(v.get("title", url))}</a>')
+        return "\n".join(lines)
+
+    if cmd in ("bookmark", "bm", "fav"):
+        if not arg:
+            return "⚠️ ระบุชื่อเรื่อง เช่น <code>/bookmark painter</code>"
+        matches = _find_manga(state, arg)
+        if not matches:
+            return f"🔍 ไม่พบเรื่องที่ตรงกับ \"{html_lib.escape(arg)}\"\n(ต้องเป็นเรื่องที่ระบบติดตามอยู่)"
+        if len(matches) > 1:
+            lines = [f"พบ {len(matches)} เรื่องที่ตรงกัน โปรดระบุให้ชัดเจนขึ้น:", ""]
+            for _, t in matches[:10]:
+                lines.append(f"• {html_lib.escape(t)}")
+            return "\n".join(lines)
+        url, title = matches[0]
+        newly = bookmarks.add(url, title)
+        prefix = "✅ เพิ่มเรื่องโปรดแล้ว" if newly else "ℹ️ เรื่องนี้อยู่ในโปรดอยู่แล้ว"
+        return f"{prefix}:\n📌 {html_lib.escape(title)}"
+
+    if cmd in ("unbookmark", "unbm", "unfav", "remove"):
+        if not arg:
+            return "⚠️ ระบุชื่อเรื่อง เช่น <code>/unbookmark painter</code>"
+        kw = arg.lower().strip()
+        matches = [(u, v.get("title", u)) for u, v in bookmarks.all().items()
+                   if kw in v.get("title", "").lower() or kw in u.lower()]
+        if not matches:
+            return f"🔍 ไม่พบเรื่องโปรดที่ตรงกับ \"{html_lib.escape(arg)}\""
+        if len(matches) > 1:
+            lines = [f"พบ {len(matches)} เรื่อง โปรดระบุให้ชัดเจนขึ้น:", ""]
+            for _, t in matches[:10]:
+                lines.append(f"• {html_lib.escape(t)}")
+            return "\n".join(lines)
+        url, title = matches[0]
+        bookmarks.remove(url)
+        return f"❌ เอาออกจากเรื่องโปรดแล้ว:\n{html_lib.escape(title)}"
+
+    return f"❓ ไม่รู้จักคำสั่ง <code>/{html_lib.escape(cmd)}</code>\nพิมพ์ /help เพื่อดูคำสั่งทั้งหมด"
+
+
+def _resolve_slug(state: StateManager, bookmarks: BookmarkManager, slug: str):
+    """Map a callback slug back to (url, title) from tracked manga or bookmarks."""
+    for source in (state.get_all_tracked(), bookmarks.all()):
+        for url, v in source.items():
+            if url.rstrip("/").split("/")[-1] == slug:
+                return url, v.get("title", url)
+    return None, None
+
+
+def _handle_callback(cq: dict, notifier: "TelegramNotifier", state: StateManager,
+                     bookmarks: BookmarkManager):
+    """Handle an inline-button tap on an update card."""
+    cq_id = cq.get("id", "")
+    data = cq.get("data", "")
+    msg = cq.get("message", {}) or {}
+    chat_id = str(msg.get("chat", {}).get("id", ""))
+    message_id = msg.get("message_id")
+
+    action, _, slug = data.partition(":")
+    url, title = _resolve_slug(state, bookmarks, slug)
+    if not url:
+        notifier.answer_callback(cq_id, "ไม่พบเรื่องนี้ในระบบ")
+        return
+
+    if action == "b":
+        bookmarks.add(url, title)
+        toast = "📌 เพิ่มเป็นเรื่องโปรดแล้ว"
+        new_markup = notifier.bookmark_keyboard(url, True)
+    elif action == "u":
+        bookmarks.remove(url)
+        toast = "❌ เอาออกจากเรื่องโปรดแล้ว"
+        new_markup = notifier.bookmark_keyboard(url, False)
+    else:
+        notifier.answer_callback(cq_id, "")
+        return
+
+    notifier.answer_callback(cq_id, toast)
+    if chat_id and message_id:
+        notifier.edit_reply_markup(chat_id, message_id, new_markup)
+    print(f"[CALLBACK] {action}:{slug} -> {toast}")
+
+
+def process_telegram_commands(notifier: "TelegramNotifier", state: StateManager,
+                              bookmarks: BookmarkManager, bot_state: dict) -> int:
+    """Poll for new Telegram messages and act on any bot commands."""
+    offset = bot_state.get("telegram_offset")
+    start = (offset + 1) if isinstance(offset, int) else None
+    updates = notifier.get_updates(start)
+    handled = 0
+    for u in updates:
+        bot_state["telegram_offset"] = u["update_id"]
+
+        # Inline button taps (add/remove bookmark straight from an update card)
+        if "callback_query" in u:
+            _handle_callback(u["callback_query"], notifier, state, bookmarks)
+            handled += 1
+            continue
+
+        msg = u.get("message") or u.get("edited_message") or u.get("channel_post")
+        if not msg:
+            continue
+        text = (msg.get("text") or "").strip()
+        chat_id = str(msg.get("chat", {}).get("id", ""))
+        if not text.startswith("/") or not chat_id:
+            continue
+        parts = text.split(maxsplit=1)
+        cmd = parts[0].lstrip("/").split("@")[0].lower()
+        arg = parts[1].strip() if len(parts) > 1 else ""
+        reply = _handle_command(cmd, arg, state, bookmarks)
+        notifier.send_message(reply, chat_id=chat_id)
+        handled += 1
+        print(f"[CMD] /{cmd} {arg} -> replied")
+    return handled
+
+
 # ============== MAIN ==============
 def main():
     print("=" * 60)
@@ -639,17 +1048,32 @@ def main():
 
     # Initialize components
     state = StateManager(STATE_FILE)
+    bookmarks = BookmarkManager(BOOKMARKS_FILE)
+    bot_state = load_bot_state(BOT_STATE_FILE)
     scraper = GoMangaScraper()
     notifier = TelegramNotifier(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
     tracked_count = len(state.get_all_tracked())
+    telegram_ready = bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
 
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+    if not telegram_ready:
         print("[WARN] Telegram credentials not set. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID env vars.")
         print("      Notifications will be printed to console only.")
     else:
-        # Send startup notification
-        notifier.send_startup_message(tracked_count)
+        # Register the command menu once (so "/" shows suggestions in Telegram)
+        if not bot_state.get("commands_registered"):
+            if notifier.register_commands():
+                bot_state["commands_registered"] = True
+                print("[INFO] Registered Telegram command menu")
+        # Handle any pending bookmark commands / button taps
+        try:
+            n = process_telegram_commands(notifier, state, bookmarks, bot_state)
+            if n:
+                print(f"[INFO] Handled {n} Telegram command(s)")
+        except Exception as e:
+            print(f"[ERROR] Command processing failed: {e}", file=sys.stderr)
+        # NOTE: no startup "heartbeat" message — at a 5-minute cadence it would spam.
+        # Only real events (new chapters, command replies, button taps) notify.
 
     updates_found = 0
 
@@ -663,28 +1087,36 @@ def main():
             for update in updates:
                 manga = update["manga"]
                 new_chapters = update["new_chapters"]
+                update["is_bookmarked"] = bookmarks.is_bookmarked(manga.url)
 
                 # Print to console
-                print(f"\n📖 {manga.title}")
+                star = " 📌" if update["is_bookmarked"] else ""
+                print(f"\n📖 {manga.title}{star}")
                 for ch in new_chapters:
                     print(f"   ✨ ตอนที่ {ch.number} - {ch.url}")
 
                 # Send Telegram notification
-                if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+                if telegram_ready:
                     notifier.send_update(update)
                     time.sleep(0.5)  # Rate limit
+
+            # Separate favourites summary
+            fav_updates = [u for u in updates if u.get("is_bookmarked")]
+            if telegram_ready and fav_updates:
+                notifier.send_favorites_summary(fav_updates)
         else:
             updates_found = 0
             print("[INFO] No new updates found")
 
     finally:
-        # Send shutdown notification (only if Telegram is configured)
-        if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-            notifier.send_shutdown_message(tracked_count, updates_found)
+        # Persist Telegram offset; ensure bookmarks file exists so CI can commit it.
+        # No routine shutdown "heartbeat" message (would spam at 5-min cadence).
+        save_bot_state(BOT_STATE_FILE, bot_state)
+        bookmarks.save()
 
     print("\n" + "=" * 60)
     print(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"Tracked manga: {len(state.get_all_tracked())}")
+    print(f"Tracked manga: {len(state.get_all_tracked())}  |  Bookmarks: {len(bookmarks.all())}")
     print("=" * 60)
 
 
