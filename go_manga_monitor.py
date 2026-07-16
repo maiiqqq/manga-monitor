@@ -12,7 +12,7 @@ import re
 import sys
 import time
 from dataclasses import asdict, dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urljoin
@@ -35,6 +35,18 @@ BOOKMARKS_FILE = Path(__file__).parent / "bookmarks.json"
 BOT_STATE_FILE = Path(__file__).parent / "bot_state.json"
 REQUEST_TIMEOUT = 30
 REQUEST_DELAY = 1.0  # Be polite to the server
+
+# go-manga is a Thai site and labels chapter dates in Indochina Time (UTC+7).
+# The runner (GitHub Actions) is on UTC, so "today" must be computed in the
+# site's timezone — otherwise, for the ~7h each evening/night in UTC, a chapter
+# released "today" in Thailand carries tomorrow's date relative to UTC and gets
+# wrongly filtered out as anomalous/future-dated.
+SITE_TZ = timezone(timedelta(hours=7))
+
+
+def site_today() -> str:
+    """Current calendar date in the site's timezone (ICT / UTC+7), ISO format."""
+    return datetime.now(SITE_TZ).date().isoformat()
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -519,7 +531,7 @@ class GoMangaScraper:
     def check_updates(self, state: StateManager) -> list[dict]:
         """Check for new chapters across all manga (date-based detection)."""
         updates = []
-        today = date.today().isoformat()
+        today = site_today()
 
         # Get list of manga from the update page
         manga_list = self.scrape_list_page()
@@ -573,9 +585,25 @@ class GoMangaScraper:
             last_date = state.get_last_chapter_date(manga_url) or ""
             new_chapters = self._select_new_chapters(manga.chapters, last_num, last_date, today)
 
-            # Always advance the stored baseline to the newest chapter + date we saw
-            newest_date = max((c.date for c in manga.chapters if c.date), default=last_date)
-            new_latest = manga.latest_chapter or latest_chapter
+            # Advance the stored baseline only over chapters we can actually
+            # "see" today (skip anomalous future-dated ones). If we advanced past
+            # a future-dated chapter here it would be swallowed: the next run's
+            # cheap number gate would match the stored baseline and never look
+            # again, so a genuine release that momentarily parsed as future would
+            # be lost forever. Excluding them keeps that chapter in play until it
+            # is no longer future, at which point it is detected and notified.
+            visible = [c for c in manga.chapters
+                       if c.number.isdigit() and not (c.date and c.date > today)]
+            if visible:
+                newest_num = max(int(c.number) for c in visible)
+                if last_num is not None:
+                    newest_num = max(newest_num, last_num)
+                new_latest = str(newest_num)
+                newest_date = max((c.date for c in visible if c.date), default=last_date)
+            else:
+                # Nothing visible yet (all future-dated / undated) — hold baseline
+                new_latest = last_chapter
+                newest_date = last_date
 
             if new_chapters:
                 updates.append({
