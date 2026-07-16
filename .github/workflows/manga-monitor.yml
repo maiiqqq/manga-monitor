@@ -40,11 +40,21 @@ jobs:
       - name: Commit state changes (if any)
         if: always()
         run: |
+          set -euo pipefail
+          echo "=== Git status before ==="
+          git status
+          echo "=== Current branch/HEAD ==="
+          git branch -v
+          git log -1 --oneline
+          echo "=== Config ==="
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add monitor_state.json
+          echo "=== Diff cached ==="
+          git diff --cached --quiet || echo "Has changes"
           if ! git diff --cached --quiet; then
             git commit -m "Update monitor state [$(date -u +'%Y-%m-%d %H:%M:%S UTC')]"
+            echo "=== Pushing ==="
             git push
           else
             echo "No state changes to commit"
