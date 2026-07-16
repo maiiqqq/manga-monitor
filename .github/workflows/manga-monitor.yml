@@ -20,12 +20,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0  # Full history needed for push
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -35,12 +35,19 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Manga Bot (looped, near real-time)
+        # Hard cap the step so a stuck Telegram long-poll can never hold the
+        # runner for the full job timeout. Slightly above MAX_RUNTIME_SECONDS.
+        timeout-minutes: 5
+        continue-on-error: true  # A throttled/killed loop must still commit state
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          # Loop long-polling for ~4.5 min each run, then hand off to the next
-          # scheduled run. Commands/buttons are answered within seconds while live.
-          MAX_RUNTIME_SECONDS: '270'
+          # Loop long-polling for ~4 min each run, then hand off to the next
+          # scheduled run. Ending well inside the 5-min cron slot leaves margin
+          # so a delayed next run overlaps (and is queued) far less often, which
+          # avoids the concurrency-cancel churn when GitHub bursts backlogged
+          # schedule events. Commands/buttons are answered within seconds live.
+          MAX_RUNTIME_SECONDS: '240'
         run: |
           python bot_realtime.py
 

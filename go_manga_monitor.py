@@ -716,36 +716,6 @@ class TelegramNotifier:
             print(f"[ERROR] editMessageReplyMarkup: {e}", file=sys.stderr)
             return False
 
-    def send_startup_message(self, tracked_count: int) -> bool:
-        """Send notification when monitor starts"""
-        text = (
-            f"🚀 <b>Go-Manga Monitor เริ่มทำงานแล้ว</b>\n"
-            f"\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"📊 <b>สถานะ:</b> 🟢 กำลังทำงาน\n"
-            f"📚 <b>ติดตามอยู่:</b> {tracked_count} เรื่อง\n"
-            f"⏱️ <b>ตรวจสอบทุก:</b> 30 นาที\n"
-            f"⏰ <b>เริ่มเวลา:</b> <i>{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</i>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"🤖 <i>Go-Manga Monitor Bot</i>"
-        )
-        return self.send_message(text)
-
-    def send_shutdown_message(self, tracked_count: int, updates_found: int = 0) -> bool:
-        """Send notification when monitor stops"""
-        text = (
-            f"🛑 <b>Go-Manga Monitor หยุดทำงานแล้ว</b>\n"
-            f"\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"📊 <b>สถานะ:</b> 🔴 หยุดทำงาน\n"
-            f"📚 <b>ติดตามอยู่:</b> {tracked_count} เรื่อง\n"
-            f"🔔 <b>พบอัพเดตในรอบนี้:</b> {updates_found} เรื่อง\n"
-            f"⏰ <b>หยุดเวลา:</b> <i>{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</i>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"🤖 <i>Go-Manga Monitor Bot</i>"
-        )
-        return self.send_message(text)
-
     def format_update_message(self, update: dict) -> str:
         manga = update["manga"]
         new_chapters = update["new_chapters"]
