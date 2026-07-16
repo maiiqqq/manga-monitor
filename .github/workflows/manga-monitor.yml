@@ -34,12 +34,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Manga Monitor
+      - name: Run Manga Bot (looped, near real-time)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Loop long-polling for ~4.5 min each run, then hand off to the next
+          # scheduled run. Commands/buttons are answered within seconds while live.
+          MAX_RUNTIME_SECONDS: '270'
         run: |
-          python go_manga_monitor.py
+          python bot_realtime.py
 
       - name: Commit state changes (if any)
         if: always()
