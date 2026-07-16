@@ -517,33 +517,116 @@ class TelegramNotifier:
             print(f"[ERROR] Failed to send Telegram message: {e}", file=sys.stderr)
             return False
 
+    def send_startup_message(self, tracked_count: int) -> bool:
+        """Send notification when monitor starts"""
+        text = (
+            f"🚀 <b>Go-Manga Monitor เริ่มทำงานแล้ว</b>\n"
+            f"\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📊 <b>สถานะ:</b> 🟢 กำลังทำงาน\n"
+            f"📚 <b>ติดตามอยู่:</b> {tracked_count} เรื่อง\n"
+            f"⏱️ <b>ตรวจสอบทุก:</b> 30 นาที\n"
+            f"⏰ <b>เริ่มเวลา:</b> <i>{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</i>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🤖 <i>Go-Manga Monitor Bot</i>"
+        )
+        return self.send_message(text)
+
+    def send_shutdown_message(self, tracked_count: int, updates_found: int = 0) -> bool:
+        """Send notification when monitor stops"""
+        text = (
+            f"🛑 <b>Go-Manga Monitor หยุดทำงานแล้ว</b>\n"
+            f"\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📊 <b>สถานะ:</b> 🔴 หยุดทำงาน\n"
+            f"📚 <b>ติดตามอยู่:</b> {tracked_count} เรื่อง\n"
+            f"🔔 <b>พบอัพเดตในรอบนี้:</b> {updates_found} เรื่อง\n"
+            f"⏰ <b>หยุดเวลา:</b> <i>{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</i>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🤖 <i>Go-Manga Monitor Bot</i>"
+        )
+        return self.send_message(text)
+
     def format_update_message(self, update: dict) -> str:
         manga = update["manga"]
         new_chapters = update["new_chapters"]
+        prev_chapter = update.get("previous_chapter", "?")
+
+        # Type emoji mapping
+        type_emoji = {"MANHWA": "🇰🇷", "MANGA": "🇯🇵", "MANHUA": "🇨🇳", "UNKNOWN": "📖"}
+        type_emoji_str = type_emoji.get(manga.type_.upper(), "📖")
+        
+        # Status emoji mapping
+        status_lower = manga.status.lower()
+        status_emoji = "🔄" if "ongo" in status_lower or "ongo" in status_lower else ("✅" if "complet" in status_lower or "จบ" in status_lower else "⏸️")
+
+        # Type badge
+        type_badge = f"{type_emoji_str} {manga.type_}" if manga.type_ != "UNKNOWN" else "📖 Manga"
 
         lines = [
-            f"🔔 <b>มีการ์ตูนอัพเดทใหม่!</b>",
+            f"🔔 <b>มีการ์ตูนอัปเดตใหม่!</b>",
             f"",
+            f"━━━━━━━━━━━━━━━━━━",
             f"📖 <b>{manga.title}</b>",
-            f"🔖 ประเภท: {manga.type_} | สถานะ: {manga.status} | ⭐ {manga.rating}",
             f"",
-            f"📚 <b>ตอนใหม่ {len(new_chapters)} ตอน:</b>",
+            f"🏷️ <b>ประเภท:</b> {type_badge}  |  {status_emoji} <b>สถานะ:</b> {manga.status}  |  ⭐ <b>Rating:</b> {manga.rating}",
+            f"━━━━━━━━━━━━━━━━━━",
+            f"",
+            f"📚 <b>ตอนใหม่ {len(new_chapters)} ตอน</b>  <i>(จากตอนที่ {prev_chapter})</i>",
+            f"",
         ]
 
-        for ch in new_chapters:
-            date_str = f" ({ch.date})" if ch.date else ""
-            lines.append(f"  • <a href=\"{ch.url}\">ตอนที่ {ch.number}</a>{date_str}")
+        for i, ch in enumerate(new_chapters, 1):
+            date_str = f" <i>({ch.date})</i>" if ch.date else ""
+            # Use bold for chapter number, link on the number
+            lines.append(f"   <b>{i}.</b> <a href=\"{ch.url}\"><b>ตอนที่ {ch.number}</b></a>{date_str}")
 
         lines.extend([
             f"",
-            f"🔗 <a href=\"{manga.url}\">เปิดอ่านที่ Go-Manga</a>",
-            f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"━━━━━━━━━━━━━━━━━━",
+            f"🔗 <a href=\"{manga.url}\"><b>📖 เปิดอ่านที่ Go-Manga</b></a>",
+            f"⏰ <i>{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</i>",
+            f"━━━━━━━━━━━━━━━━━━",
         ])
 
         return "\n".join(lines)
 
     def send_update(self, update: dict) -> bool:
         message = self.format_update_message(update)
+        return self.send_message(message)
+
+    def send_startup_message(self, tracked_count: int) -> bool:
+        """Send startup notification"""
+        message = (
+            f"🚀 <b>Go-Manga Monitor เริ่มทำงานแล้ว</b>\n"
+            f"\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"📊 <b>สถานะ:</b> กำลังตรวจสอบการอัปเดต...\n"
+            f"📚 <b>ติดตาม:</b> {tracked_count} เรื่อง\n"
+            f"⏰ <b>เริ่มเวลา:</b> <i>{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</i>\n"
+            f"⏱ <b>ความถี่:</b> ทุก 30 นาที\n"
+            f"━━━━━━━━━━━━━━━━━━"
+        )
+        return self.send_message(message)
+
+    def send_shutdown_message(self, tracked_count: int, updates_found: int) -> bool:
+        """Send shutdown notification with summary"""
+        if updates_found > 0:
+            status_emoji = "✅"
+            status_text = f"พบอัปเดตใหม่ {updates_found} เรื่อง"
+        else:
+            status_emoji = "💤"
+            status_text = "ไม่พบอัปเดตใหม่"
+
+        message = (
+            f"🛑 <b>Go-Manga Monitor หยุดทำงาน</b>\n"
+            f"\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"{status_emoji} <b>ผลลัพธ์:</b> {status_text}\n"
+            f"📚 <b>ติดตาม:</b> {tracked_count} เรื่อง\n"
+            f"⏰ <b>จบเวลา:</b> <i>{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}</i>\n"
+            f"━━━━━━━━━━━━━━━━━━"
+        )
         return self.send_message(message)
 
 
@@ -559,30 +642,45 @@ def main():
     scraper = GoMangaScraper()
     notifier = TelegramNotifier(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
 
+    tracked_count = len(state.get_all_tracked())
+
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print("[WARN] Telegram credentials not set. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID env vars.")
         print("      Notifications will be printed to console only.")
-
-    # Check for updates
-    updates = scraper.check_updates(state)
-
-    if updates:
-        print(f"\n[INFO] Found {len(updates)} manga with updates")
-        for update in updates:
-            manga = update["manga"]
-            new_chapters = update["new_chapters"]
-
-            # Print to console
-            print(f"\n📖 {manga.title}")
-            for ch in new_chapters:
-                print(f"   ✨ ตอนที่ {ch.number} - {ch.url}")
-
-            # Send Telegram notification
-            if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-                notifier.send_update(update)
-                time.sleep(0.5)  # Rate limit
     else:
-        print("[INFO] No new updates found")
+        # Send startup notification
+        notifier.send_startup_message(tracked_count)
+
+    updates_found = 0
+
+    try:
+        # Check for updates
+        updates = scraper.check_updates(state)
+
+        if updates:
+            updates_found = len(updates)
+            print(f"\n[INFO] Found {updates_found} manga with updates")
+            for update in updates:
+                manga = update["manga"]
+                new_chapters = update["new_chapters"]
+
+                # Print to console
+                print(f"\n📖 {manga.title}")
+                for ch in new_chapters:
+                    print(f"   ✨ ตอนที่ {ch.number} - {ch.url}")
+
+                # Send Telegram notification
+                if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+                    notifier.send_update(update)
+                    time.sleep(0.5)  # Rate limit
+        else:
+            updates_found = 0
+            print("[INFO] No new updates found")
+
+    finally:
+        # Send shutdown notification (only if Telegram is configured)
+        if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+            notifier.send_shutdown_message(tracked_count, updates_found)
 
     print("\n" + "=" * 60)
     print(f"Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -591,4 +689,31 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "test-msg":
+        # Test message formatting
+        state = StateManager(STATE_FILE)
+        notifier = TelegramNotifier(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)
+        
+        tracked = len(state.get_all_tracked())
+        print(f"Tracked manga: {tracked}")
+        print("Sending startup message...")
+        notifier.send_startup_message(tracked)
+        print("Startup message sent!")
+        
+        # Also test update message format
+        import time
+        time.sleep(1)
+        
+        # Send test shutdown
+        print("Sending shutdown message (3 updates found)...")
+        notifier.send_shutdown_message(tracked, 3)
+        print("Shutdown message sent!")
+        
+        import time
+        time.sleep(1)
+        print("Sending shutdown message (0 updates)...")
+        notifier.send_shutdown_message(tracked, 0)
+        print("Shutdown message sent!")
+    else:
+        main()

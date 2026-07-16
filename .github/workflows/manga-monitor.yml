@@ -65,4 +65,23 @@ jobs:
           fi
 
           echo "Has changes, committing..."
-          git commit -m "Update monitor state [$(date -u 
+          git commit -m "Update monitor state [$(date -u +'%Y-%m-%d %H:%M:%S UTC')]"
+
+          echo "=== Pushing (with rebase + retry) ==="
+          for attempt in 1 2 3 4 5; do
+            echo "Attempt $attempt: git push origin HEAD:master"
+            if git push origin HEAD:master 2>&1; then
+              echo "Push succeeded on attempt $attempt"
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt), rebasing on latest master..."
+            git fetch origin master
+            # Keep our monitor_state.json if it conflicts during rebase
+            git rebase origin/master || git rebase --abort
+            sleep $((attempt * 3))
+          done
+
+          echo "Failed to push after 5 attempts"
+          exit 1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

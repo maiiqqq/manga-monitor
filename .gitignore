@@ -21,3 +21,11 @@ monitor.log
 debug_page.html
 
 # OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
