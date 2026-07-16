@@ -46,6 +46,8 @@ jobs:
           echo "=== Current branch/HEAD ==="
           git branch -v
           git log -1 --oneline
+          echo "=== Remote URL ==="
+          git remote -v
           echo "=== Config ==="
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -55,7 +57,7 @@ jobs:
             echo "Has changes, committing..."
             git commit -m "Update monitor state [$(date -u +'%Y-%m-%d %H:%M:%S UTC')]"
             echo "=== Pushing ==="
-            git push
+            git push origin HEAD:master
           else
             echo "No state changes to commit"
           fi
