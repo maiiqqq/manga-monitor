@@ -13,7 +13,7 @@ env/
 .venv/
 
 # State & logs
-monitor_state.json
+# monitor_state.json is intentionally tracked (committed by CI each run)
 monitor.log
 *.log
 
@@ -21,11 +21,3 @@ monitor.log
 debug_page.html
 
 # OS
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
