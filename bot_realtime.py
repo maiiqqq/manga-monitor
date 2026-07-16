@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 """
-Go-Manga real-time bot (always-on runner).
+Go-Manga real-time bot (always-on / looped runner).
 
-Runs as a single long-lived process meant for a 24/7 host (a small VM or a
-container). It does two things in one loop:
+Runs a single loop that does two things:
 
-  1. Long-polls Telegram (getUpdates, held open ~30s) so /commands and inline
+  1. Long-polls Telegram (getUpdates held open ~30s) so /commands and inline
      bookmark buttons are handled almost instantly.
   2. Every SCRAPE_INTERVAL seconds it checks go-manga for new chapters and sends
      the update cards + favourites summary.
 
-State (monitor_state.json, bookmarks.json, bot_state.json) is stored next to the
-code, so the host must give this folder PERSISTENT storage (a real VM disk or a
-mounted volume) — otherwise bookmarks reset on restart.
+MAX_RUNTIME_SECONDS controls how long it runs:
+  - 0 (default)  -> run forever (a real 24/7 host: VM / container).
+  - N seconds    -> exit after N seconds. Used on GitHub Actions so each
+                    scheduled run loops for a few minutes (answering commands in
+                    near real-time) then hands off to the next run.
 
-This reuses all the logic already in go_manga_monitor.py.
+Reuses all the logic in go_manga_monitor.py.
 """
 import os
 import sys
@@ -27,10 +28,7 @@ import go_manga_monitor as gm
 # --- tuning ---
 SCRAPE_INTERVAL = 300     # seconds between go-manga checks (5 min)
 LONGPOLL_TIMEOUT = 30     # seconds Telegram holds the getUpdates connection open
-# 0 = run forever (a real 24/7 host). >0 = exit after N seconds, used on
-# GitHub Actions so each scheduled run loops for a few minutes then hands off
-# to the next run (near real-time on a free schedule).
-MAX_RUNTIME = int(os.environ.get("MAX_RUNTIME_SECONDS", "0"))
+MAX_RUNTIME = int(os.environ.get("MAX_RUNTIME_SECONDS", "0"))  # 0 = forever
 
 
 def _get_updates_longpoll(notifier, offset):
@@ -107,7 +105,7 @@ def main():
 
     last_scrape = 0.0
     while True:
-        # 2) periodic go-manga check (runs immediately on first loop)
+        # 1) periodic go-manga check (runs immediately on the first loop)
         if time.time() - last_scrape >= SCRAPE_INTERVAL:
             try:
                 _scrape_and_notify(scraper, state, bookmarks, notifier)
@@ -115,12 +113,12 @@ def main():
                 print(f"[ERROR] scrape cycle: {e}", file=sys.stderr)
             last_scrape = time.time()
 
-        # Stop before the long-poll if we've hit the per-run time budget
+        # 2) stop before the next long-poll if we've hit the per-run time budget
         if MAX_RUNTIME and (time.time() - started) >= MAX_RUNTIME:
             print("[INFO] max runtime reached — handing off to next run")
             break
 
-        # 1) near-instant command / button handling (blocks up to LONGPOLL_TIMEOUT)
+        # 3) near-instant command / button handling (blocks up to LONGPOLL_TIMEOUT)
         offset = bot_state.get("telegram_offset")
         start = (offset + 1) if isinstance(offset, int) else None
         updates = _get_updates_longpoll(notifier, start)
