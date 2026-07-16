@@ -10,6 +10,8 @@ jobs:
   monitor:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: write  # Allow pushing commits
 
     steps:
       - name: Checkout repository
