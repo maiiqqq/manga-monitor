@@ -659,6 +659,15 @@ class TelegramNotifier:
         try:
             resp = requests.post(url, json=payload, timeout=10)
             resp.raise_for_status()
+            # Telegram returns HTTP 200 with {"ok": false, ...} for logical
+            # failures (bad chat_id, bot not in chat, blocked). raise_for_status
+            # does not catch those, so check the payload explicitly — otherwise
+            # a rejected message looks like a success and no card is delivered.
+            data = resp.json()
+            if not data.get("ok"):
+                print(f"[ERROR] Telegram sendMessage rejected: "
+                      f"{data.get('error_code')} {data.get('description')}", file=sys.stderr)
+                return False
             return True
         except Exception as e:
             print(f"[ERROR] Failed to send Telegram message: {e}", file=sys.stderr)
@@ -717,6 +726,14 @@ class TelegramNotifier:
         try:
             resp = requests.post(url, json=payload, timeout=15)
             resp.raise_for_status()
+            # Telegram can answer HTTP 200 with {"ok": false, ...} — e.g. when it
+            # fails to fetch/hotlink the cover image, or the chat_id is wrong.
+            # Treat that as a failure so send_update falls back to a text card.
+            data = resp.json()
+            if not data.get("ok"):
+                print(f"[ERROR] Telegram sendPhoto rejected: "
+                      f"{data.get('error_code')} {data.get('description')}", file=sys.stderr)
+                return False
             return True
         except Exception as e:
             print(f"[ERROR] Failed to send Telegram photo: {e}", file=sys.stderr)
