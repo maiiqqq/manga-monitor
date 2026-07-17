@@ -7,9 +7,13 @@ on:
   workflow_dispatch:  # Allow manual trigger
     inputs:
       backfill_today:
-        description: "Resend every manga that dropped a chapter today"
+        description: "Resend every manga that dropped a chapter (on backfill_date)"
         type: boolean
         default: false
+      backfill_date:
+        description: "Date to resend as YYYY-MM-DD (blank = today, site tz UTC+7)"
+        type: string
+        default: ""
 
 # Prevent overlapping scheduled runs from racing on the same push
 concurrency:
@@ -56,6 +60,7 @@ jobs:
           # Empty on schedule/self-chain (normal loop); "true" only when a
           # manual dispatch requests a one-off resend of today's updates.
           BACKFILL_TODAY: ${{ inputs.backfill_today }}
+          BACKFILL_DATE: ${{ inputs.backfill_date }}
         run: |
           python bot_realtime.py
 

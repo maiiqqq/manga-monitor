@@ -108,8 +108,9 @@ def main():
     # exit. Triggered by the workflow's backfill_today input. Does not touch
     # state, so it never affects the normal detection loop.
     if os.environ.get("BACKFILL_TODAY", "").strip().lower() in ("1", "true", "yes"):
-        ups = scraper.collect_today_updates()
-        print(f"[BACKFILL] {len(ups)} manga updated today")
+        target = os.environ.get("BACKFILL_DATE", "").strip()
+        ups = scraper.collect_updates_for_date(target)
+        print(f"[BACKFILL] {len(ups)} manga updated on {target or gm.site_today()}")
         for u in ups:
             u["is_bookmarked"] = bookmarks.is_bookmarked(u["manga"].url)
             notifier.send_update(u)
