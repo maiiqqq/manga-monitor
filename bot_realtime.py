@@ -99,6 +99,7 @@ def main():
     notifier = gm.TelegramNotifier(gm.TELEGRAM_BOT_TOKEN, gm.TELEGRAM_CHAT_ID)
 
     notifier.register_commands()
+    notifier.describe_chat()  # log where notifications will be delivered
     started = time.time()
     print(f"[INFO] Real-time bot started — long-poll {LONGPOLL_TIMEOUT}s, "
           f"scrape every {SCRAPE_INTERVAL}s, max_runtime {MAX_RUNTIME or 'forever'}")

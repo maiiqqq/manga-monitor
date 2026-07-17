@@ -673,6 +673,30 @@ class TelegramNotifier:
             print(f"[ERROR] Failed to send Telegram message: {e}", file=sys.stderr)
             return False
 
+    def describe_chat(self) -> None:
+        """Log which chat notifications are delivered to (startup diagnostic).
+
+        The numeric chat_id is a secret and GitHub masks it, but the chat's
+        type and name are not — so this reveals *where* the cards land (e.g. a
+        group you no longer watch) without leaking the id, and turns an invalid
+        chat_id into a clear getChat error instead of silent non-delivery.
+        """
+        if not (self.bot_token and self.chat_id):
+            return
+        try:
+            r = requests.get(f"{self.api_url}/getChat",
+                             params={"chat_id": self.chat_id}, timeout=10)
+            data = r.json()
+            if data.get("ok"):
+                c = data.get("result", {})
+                name = c.get("title") or c.get("username") or c.get("first_name") or "?"
+                print(f"[INFO] Notification target -> type={c.get('type')} name={name!r}")
+            else:
+                print(f"[ERROR] getChat rejected: {data.get('error_code')} "
+                      f"{data.get('description')} (check TELEGRAM_CHAT_ID)", file=sys.stderr)
+        except Exception as e:
+            print(f"[ERROR] getChat: {e}", file=sys.stderr)
+
     def register_commands(self) -> bool:
         """Register the bot's command menu so users see it when typing '/'."""
         if not self.bot_token:
