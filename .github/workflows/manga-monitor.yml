@@ -5,6 +5,11 @@ on:
     # Run every 5 minutes (GitHub Actions minimum interval)
     - cron: '*/5 * * * *'
   workflow_dispatch:  # Allow manual trigger
+    inputs:
+      backfill_today:
+        description: "Resend every manga that dropped a chapter today"
+        type: boolean
+        default: false
 
 # Prevent overlapping scheduled runs from racing on the same push
 concurrency:
@@ -48,6 +53,9 @@ jobs:
           # avoids the concurrency-cancel churn when GitHub bursts backlogged
           # schedule events. Commands/buttons are answered within seconds live.
           MAX_RUNTIME_SECONDS: '240'
+          # Empty on schedule/self-chain (normal loop); "true" only when a
+          # manual dispatch requests a one-off resend of today's updates.
+          BACKFILL_TODAY: ${{ inputs.backfill_today }}
         run: |
           python bot_realtime.py
 

@@ -103,6 +103,23 @@ def main():
 
     notifier.register_commands()
     notifier.describe_chat()  # log where notifications will be delivered
+
+    # One-off backfill: resend every manga that dropped a chapter today, then
+    # exit. Triggered by the workflow's backfill_today input. Does not touch
+    # state, so it never affects the normal detection loop.
+    if os.environ.get("BACKFILL_TODAY", "").strip().lower() in ("1", "true", "yes"):
+        ups = scraper.collect_today_updates()
+        print(f"[BACKFILL] {len(ups)} manga updated today")
+        for u in ups:
+            u["is_bookmarked"] = bookmarks.is_bookmarked(u["manga"].url)
+            notifier.send_update(u)
+            time.sleep(0.5)
+        favs = [u for u in ups if u.get("is_bookmarked")]
+        if favs:
+            notifier.send_favorites_summary(favs)
+        print("[BACKFILL] done")
+        return
+
     started = time.time()
     print(f"[INFO] Real-time bot started — long-poll {LONGPOLL_TIMEOUT}s, "
           f"scrape every {SCRAPE_INTERVAL}s, max_runtime {MAX_RUNTIME or 'forever'}")
