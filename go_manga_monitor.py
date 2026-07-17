@@ -621,15 +621,16 @@ class GoMangaScraper:
 
         return updates
 
-    def collect_today_updates(self) -> list[dict]:
+    def collect_updates_for_date(self, target_date: str = "") -> list[dict]:
         """Backfill helper: every manga on the update list whose detail page has
-        chapters dated today (site tz), regardless of the stored baseline.
+        chapters dated on target_date (site tz; defaults to today), regardless
+        of the stored baseline.
 
-        Used for an on-demand "resend everything that dropped today" pass. It
+        Used for an on-demand "resend everything that dropped on <date>" pass. It
         does not read or advance state, so it never interferes with the normal
         detection loop and can be run at any time.
         """
-        today = site_today()
+        today = target_date or site_today()
         results = []
         for manga_info in self.scrape_list_page():
             manga = self.scrape_manga_detail(manga_info["url"])
