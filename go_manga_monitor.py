@@ -621,6 +621,42 @@ class GoMangaScraper:
 
         return updates
 
+    def collect_today_updates(self) -> list[dict]:
+        """Backfill helper: every manga on the update list whose detail page has
+        chapters dated today (site tz), regardless of the stored baseline.
+
+        Used for an on-demand "resend everything that dropped today" pass. It
+        does not read or advance state, so it never interferes with the normal
+        detection loop and can be run at any time.
+        """
+        today = site_today()
+        results = []
+        for manga_info in self.scrape_list_page():
+            manga = self.scrape_manga_detail(manga_info["url"])
+            if not manga:
+                continue
+            # Prefer the reliable list-page fields for display
+            if not manga.cover_image:
+                manga.cover_image = manga_info.get("cover_image", "")
+            if manga.type_ == "UNKNOWN":
+                manga.type_ = manga_info.get("type_", "UNKNOWN")
+            if manga.rating in ("N/A", ""):
+                manga.rating = manga_info.get("rating", "N/A")
+            if manga_info.get("title"):
+                manga.title = manga_info["title"]
+
+            todays = [c for c in manga.chapters if c.number.isdigit() and c.date == today]
+            if todays:
+                todays.sort(key=lambda c: int(c.number))
+                results.append({
+                    "manga": manga,
+                    "new_chapters": todays,
+                    "previous_chapter": str(int(todays[0].number) - 1),
+                })
+                print(f"[BACKFILL] {manga.title}: {len(todays)} chapter(s) dated {today}")
+            time.sleep(REQUEST_DELAY)  # Be polite
+        return results
+
 
 # ============== TELEGRAM NOTIFIER ==============
 class TelegramNotifier:
