@@ -26,7 +26,10 @@ import requests
 import go_manga_monitor as gm
 
 # --- tuning ---
-SCRAPE_INTERVAL = 300     # seconds between go-manga checks (5 min)
+# Seconds between go-manga checks. Kept below the per-run budget so each Actions
+# run scrapes several times (at ~0/90/180s) instead of only once, for fresher
+# detection. Tunable via env; on an always-on host you can lower it further.
+SCRAPE_INTERVAL = int(os.environ.get("SCRAPE_INTERVAL_SECONDS", "90"))
 LONGPOLL_TIMEOUT = 30     # seconds Telegram holds the getUpdates connection open
 MAX_RUNTIME = int(os.environ.get("MAX_RUNTIME_SECONDS", "0"))  # 0 = forever
 
