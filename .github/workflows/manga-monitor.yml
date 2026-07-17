@@ -79,3 +79,32 @@ jobs:
           exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Keep the loop alive (self-chain next run)
+        if: always()
+        # GitHub's */5 cron is best-effort and heavily throttled, so it is not
+        # truly continuous. To get as close to real-time as Actions allows, each
+        # run dispatches the next one as it finishes — runs then follow back to
+        # back (~90s scrape cadence, commands answered live). The GITHUB_TOKEN
+        # cannot trigger another workflow (loop guard), so this needs a PAT with
+        # the "actions:write" scope stored as the WORKFLOW_PAT secret. Without it
+        # the step is a no-op and the */5 cron remains the (throttled) fallback,
+        # which also restarts the chain if a dispatch is ever missed. Free on
+        # this public repo (unlimited Actions minutes); the concurrency group
+        # above keeps at most one run active so the chain never piles up.
+        env:
+          CHAIN_PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          if [ -z "${CHAIN_PAT:-}" ]; then
+            echo "WORKFLOW_PAT not set — relying on the */5 cron (throttled)."
+            echo "Add a PAT (actions:write) as the WORKFLOW_PAT secret for continuous, near-real-time runs."
+            exit 0
+          fi
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer ${CHAIN_PAT}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/manga-monitor.yml/dispatches" \
+            -d '{"ref":"master"}')
+          echo "Next-run dispatch HTTP $code"
+          [ "$code" = "204" ] || echo "::warning::self-chain dispatch returned $code (cron will still cover)"
