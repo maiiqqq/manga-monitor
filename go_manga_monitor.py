@@ -547,9 +547,39 @@ class GoMangaScraper:
             last_chapter = state.get_last_chapter(manga_url)
 
             if last_chapter is None:
-                # First time seeing this manga - record baseline, no notification
-                state.update_manga(manga_url, latest_chapter, "", title)
-                print(f"[INFO] First time tracking: {title} - Chapter {latest_chapter}")
+                # First time seeing this manga. "Notify all" mode: announce its
+                # current latest chapter once, then record the baseline so we
+                # don't repeat. Only manga currently on the ~20-item update list
+                # can hit this, and we send a single card (latest chapter only),
+                # so a newly-appearing series never dumps its whole backlog.
+                manga = self.scrape_manga_detail(manga_url)
+                visible = []
+                if manga:
+                    visible = [c for c in manga.chapters
+                               if c.number.isdigit() and not (c.date and c.date > today)]
+                if manga and visible:
+                    if not manga.cover_image:
+                        manga.cover_image = manga_info.get("cover_image", "")
+                    if manga.type_ == "UNKNOWN":
+                        manga.type_ = manga_info.get("type_", "UNKNOWN")
+                    if manga.rating in ("N/A", ""):
+                        manga.rating = manga_info.get("rating", "N/A")
+                    if manga_info.get("title"):
+                        manga.title = manga_info["title"]
+                    newest = max(visible, key=lambda c: int(c.number))
+                    updates.append({
+                        "manga": manga,
+                        "new_chapters": [newest],
+                        "previous_chapter": str(int(newest.number) - 1),
+                    })
+                    newest_date = max((c.date for c in visible if c.date), default="")
+                    state.update_manga(manga_url, newest.number, newest_date, title)
+                    print(f"[NEW] First-seen {title}: notifying latest ตอนที่ {newest.number}")
+                else:
+                    # No detail available yet — record baseline; notify next time.
+                    state.update_manga(manga_url, latest_chapter, "", title)
+                    print(f"[INFO] First time tracking (no detail): {title} - Chapter {latest_chapter}")
+                time.sleep(REQUEST_DELAY)
                 continue
 
             # Parse chapter numbers for the cheap "should we look deeper?" gate
