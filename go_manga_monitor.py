@@ -508,38 +508,21 @@ class GoMangaScraper:
 
     @staticmethod
     def _select_new_chapters(chapters, last_num, last_date: str, today: str) -> list:
-        """Decide which chapters count as "new".
+        """Every numbered chapter above the baseline is "new".
 
-        Primary rule: a chapter is new if its update date is later than the
-        last update date we recorded, up to today. Chapter number is used as a
-        safeguard so we don't miss multiple chapters released on the same day
-        (go-manga often drops several at once) or when no date baseline exists.
+        Number-based (not date-based) so it always reports the complete set of
+        new chapters — including a manga that was dormant for months and then
+        dropped several at once. Anomalous future-dated chapters are ignored.
+        `last_date` is unused (kept for signature stability).
         """
         result = []
         for c in chapters:
             if not c.number.isdigit():
                 continue
-            num = int(c.number)
-            # Ignore anomalous future-dated chapters
             if c.date and c.date > today:
-                continue
-
-            is_new = False
-            if last_date:
-                if c.date and c.date > last_date:
-                    is_new = True  # updated after our last recorded date
-                elif c.date == last_date and last_num is not None and num > last_num:
-                    is_new = True  # same-day release we haven't seen yet
-                elif not c.date and last_num is not None and num > last_num:
-                    is_new = True  # no date on chapter, fall back to number
-            else:
-                # No date baseline yet -> pure number comparison
-                if last_num is not None and num > last_num:
-                    is_new = True
-
-            if is_new:
+                continue  # ignore future-dated
+            if last_num is not None and int(c.number) > last_num:
                 result.append(c)
-
         result.sort(key=lambda c: int(c.number))
         return result
 
@@ -935,24 +918,29 @@ class TelegramNotifier:
         title = html_lib.escape(manga.title)
         pin = "📌 " if update.get("is_bookmarked") else ""
 
+        n = len(new_chapters)
         lines = [
             f"{pin}🔔 <b>อัปเดตใหม่!</b>" + ("  <i>(เรื่องโปรด)</i>" if pin else ""),
             "",
             f"📖 <b>{title}</b>",
             f"{type_emoji} {type_label}  ·  ⭐ {manga.rating}",
             "",
-            f"✨ <b>+{len(new_chapters)} ตอนใหม่</b>  (ตอนที่ {prev_chapter} → {manga.latest_chapter})",
+            f"✨ <b>อัปเดต {n} ตอน</b>  (ตอนที่ {prev_chapter} → {manga.latest_chapter})",
         ]
 
-        # List new chapters as clickable numbers. Cap the list so the caption
-        # stays well under Telegram's 1024-char limit.
-        max_show = 12
-        shown = new_chapters[-max_show:] if len(new_chapters) > max_show else new_chapters
-        links = [f'<a href="{c.url}">{c.number}</a>' for c in shown]
-        prefix = "📑 ตอนที่: "
-        if len(new_chapters) > max_show:
-            prefix = f"📑 ตอนล่าสุด {max_show} ตอน: "
-        lines.append(prefix + ", ".join(links))
+        # Always spell out how many and exactly which chapters. List them all
+        # when few; for a big multi-chapter dump show the first–last range so the
+        # caption stays under Telegram's 1024-char limit.
+        max_show = 20
+        if n <= max_show:
+            links = ", ".join(f'<a href="{c.url}">{c.number}</a>' for c in new_chapters)
+            lines.append(f"📑 <b>ตอนที่:</b> {links}")
+        else:
+            first, last = new_chapters[0], new_chapters[-1]
+            lines.append(
+                f'📑 <b>ตอนที่:</b> <a href="{first.url}">{first.number}</a> – '
+                f'<a href="{last.url}">{last.number}</a>  (รวม {n} ตอน)'
+            )
 
         latest = new_chapters[-1] if new_chapters else None
         latest_date = f"  <i>({latest.date})</i>" if latest and latest.date else ""
