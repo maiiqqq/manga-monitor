@@ -104,6 +104,42 @@ def main():
     notifier.register_commands()
     notifier.describe_chat()  # log where notifications will be delivered
 
+    # One-off targeted recheck: fetch specific manga detail pages directly
+    # (comma-separated CHECK_URLS), report their real latest chapter vs the
+    # stored baseline, and notify + advance the baseline if the site is ahead.
+    # Reaches manga that fell out of the recently-updated pages entirely.
+    check_urls = os.environ.get("CHECK_URLS", "").strip()
+    if check_urls:
+        today = gm.site_today()
+        for url in [u.strip() for u in check_urls.split(",") if u.strip()]:
+            manga = scraper.scrape_manga_detail(url)
+            if not manga or not manga.chapters:
+                print(f"[CHECK] {url}: could not fetch / no chapters")
+                continue
+            visible = [c for c in manga.chapters
+                       if c.number.isdigit() and not (c.date and c.date > today)]
+            newest = max(visible, key=lambda c: int(c.number)) if visible else manga.chapters[0]
+            base = state.get_last_chapter(url)
+            print(f"[CHECK] {manga.title}: site latest=ตอนที่ {newest.number} "
+                  f"({newest.date or 'no date'}) | baseline={base}")
+            try:
+                newer = base is None or int(newest.number) > int(base)
+            except (TypeError, ValueError):
+                newer = base is None
+            if newer:
+                upd = {"manga": manga, "new_chapters": [newest],
+                       "previous_chapter": str(base if base is not None else int(newest.number) - 1)}
+                upd["is_bookmarked"] = bookmarks.is_bookmarked(url)
+                notifier.send_update(upd)
+                newest_date = max((c.date for c in visible if c.date), default="")
+                state.update_manga(url, newest.number, newest_date, manga.title)
+                print(f"[CHECK] -> ahead of baseline: notified and baseline updated to {newest.number}")
+            else:
+                print("[CHECK] -> up to date, nothing to notify")
+            time.sleep(gm.REQUEST_DELAY)
+        print("[CHECK] done")
+        return
+
     # One-off backfill: resend every manga that dropped a chapter today, then
     # exit. Triggered by the workflow's backfill_today input. Does not touch
     # state, so it never affects the normal detection loop.
