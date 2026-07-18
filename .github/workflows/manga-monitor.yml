@@ -22,10 +22,16 @@ on:
         description: "Recheck specific manga URLs directly (comma-separated)"
         type: string
         default: ""
+      chained:
+        description: "internal marker set by the self-chain step (leave blank)"
+        type: string
+        default: ""
 
-# Prevent overlapping scheduled runs from racing on the same push
+# Scheduled runs and self-chain runs share one serialized group so they never
+# race on the state push. Manual dispatches (diagnostics: check_urls / backfill)
+# get their own per-run group so the continuous chain can't cancel them.
 concurrency:
-  group: manga-monitor-state
+  group: manga-monitor-${{ (github.event_name == 'workflow_dispatch' && inputs.chained != 'yes') && github.run_id || 'state' }}
   cancel-in-progress: false
 
 jobs:
@@ -128,6 +134,6 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/manga-monitor.yml/dispatches" \
-            -d '{"ref":"master"}')
+            -d '{"ref":"master","inputs":{"chained":"yes"}}')
           echo "Next-run dispatch HTTP $code"
           [ "$code" = "204" ] || echo "::warning::self-chain dispatch returned $code (cron will still cover)"
