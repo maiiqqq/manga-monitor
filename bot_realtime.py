@@ -109,15 +109,24 @@ def main():
     # state, so it never affects the normal detection loop.
     if os.environ.get("BACKFILL_TODAY", "").strip().lower() in ("1", "true", "yes"):
         target = os.environ.get("BACKFILL_DATE", "").strip()
+        dryrun = os.environ.get("BACKFILL_DRYRUN", "").strip().lower() in ("1", "true", "yes")
+        day = target or gm.site_today()
         ups = scraper.collect_updates_for_date(target)
-        print(f"[BACKFILL] {len(ups)} manga updated on {target or gm.site_today()}")
+        print(f"[BACKFILL] {len(ups)} manga updated on {day}"
+              + (" (DRY-RUN, not sending)" if dryrun else ""))
         for u in ups:
-            u["is_bookmarked"] = bookmarks.is_bookmarked(u["manga"].url)
+            m = u["manga"]
+            chs = ", ".join(c.number for c in u["new_chapters"])
+            print(f"[BACKFILL-LIST] {m.title} — ตอนที่ {chs}")
+            if dryrun:
+                continue
+            u["is_bookmarked"] = bookmarks.is_bookmarked(m.url)
             notifier.send_update(u)
             time.sleep(0.5)
-        favs = [u for u in ups if u.get("is_bookmarked")]
-        if favs:
-            notifier.send_favorites_summary(favs)
+        if not dryrun:
+            favs = [u for u in ups if u.get("is_bookmarked")]
+            if favs:
+                notifier.send_favorites_summary(favs)
         print("[BACKFILL] done")
         return
 
