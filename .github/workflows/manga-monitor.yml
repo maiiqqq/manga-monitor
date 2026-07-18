@@ -18,6 +18,10 @@ on:
         description: "List only (log the matches, do NOT send to Telegram)"
         type: boolean
         default: false
+      check_urls:
+        description: "Recheck specific manga URLs directly (comma-separated)"
+        type: string
+        default: ""
 
 # Prevent overlapping scheduled runs from racing on the same push
 concurrency:
@@ -66,6 +70,7 @@ jobs:
           BACKFILL_TODAY: ${{ inputs.backfill_today }}
           BACKFILL_DATE: ${{ inputs.backfill_date }}
           BACKFILL_DRYRUN: ${{ inputs.backfill_dryrun }}
+          CHECK_URLS: ${{ inputs.check_urls }}
         run: |
           python bot_realtime.py
 
