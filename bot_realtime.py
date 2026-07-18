@@ -120,22 +120,32 @@ def main():
                        if c.number.isdigit() and not (c.date and c.date > today)]
             newest = max(visible, key=lambda c: int(c.number)) if visible else manga.chapters[0]
             base = state.get_last_chapter(url)
+            site_num = int(newest.number) if newest.number.isdigit() else None
+            base_num = int(base) if (base and str(base).isdigit()) else None
             print(f"[CHECK] {manga.title}: site latest=ตอนที่ {newest.number} "
                   f"({newest.date or 'no date'}) | baseline={base}")
-            try:
-                newer = base is None or int(newest.number) > int(base)
-            except (TypeError, ValueError):
-                newer = base is None
-            if newer:
-                upd = {"manga": manga, "new_chapters": [newest],
-                       "previous_chapter": str(base if base is not None else int(newest.number) - 1)}
+            if site_num is None:
+                print("[CHECK] -> latest chapter has no number, skipping")
+            elif base_num is not None and site_num == base_num:
+                print("[CHECK] -> up to date, nothing to notify")
+            else:
+                # site ahead (site_num > base_num) OR baseline corrupted/renumbered
+                # (site_num < base_num) OR first time (base_num None) -> notify.
+                if base_num is not None and site_num > base_num:
+                    new_ch = [c for c in visible if c.number.isdigit() and int(c.number) > base_num]
+                    reason = "ahead of baseline"
+                else:
+                    new_ch = [newest]
+                    reason = ("baseline corrupted/renumbered, resynced"
+                              if base_num is not None else "first check")
+                new_ch.sort(key=lambda c: int(c.number))
+                prev = str(base_num) if (base_num is not None and site_num > base_num) else str(site_num - 1)
+                upd = {"manga": manga, "new_chapters": new_ch, "previous_chapter": prev}
                 upd["is_bookmarked"] = bookmarks.is_bookmarked(url)
                 notifier.send_update(upd)
                 newest_date = max((c.date for c in visible if c.date), default="")
                 state.update_manga(url, newest.number, newest_date, manga.title)
-                print(f"[CHECK] -> ahead of baseline: notified and baseline updated to {newest.number}")
-            else:
-                print("[CHECK] -> up to date, nothing to notify")
+                print(f"[CHECK] -> {reason}: notified {len(new_ch)} ตอน, baseline set to {newest.number}")
             time.sleep(gm.REQUEST_DELAY)
         print("[CHECK] done")
         return

@@ -526,6 +526,42 @@ class GoMangaScraper:
         result.sort(key=lambda c: int(c.number))
         return result
 
+    def _resync_baseline(self, manga_url, manga_info, state, today, recent_cutoff, reason):
+        """Fetch the detail page, (re)set the baseline to the true latest chapter,
+        and return an update dict for its latest chapter — but only if that
+        chapter is recent (>= recent_cutoff); otherwise baseline silently and
+        return None. Shared by first sighting and by resyncing a manga whose
+        stored baseline is impossibly ahead of the site (bad parse / renumber).
+        """
+        manga = self.scrape_manga_detail(manga_url)
+        visible = []
+        if manga:
+            visible = [c for c in manga.chapters
+                       if c.number.isdigit() and not (c.date and c.date > today)]
+        title = manga_info.get("title") or (manga.title if manga else manga_url)
+        if not (manga and visible):
+            state.update_manga(manga_url, manga_info.get("latest_chapter", ""), "", title)
+            print(f"[INFO] {reason} (no detail): {title}")
+            return None
+        if not manga.cover_image:
+            manga.cover_image = manga_info.get("cover_image", "")
+        if manga.type_ == "UNKNOWN":
+            manga.type_ = manga_info.get("type_", "UNKNOWN")
+        if manga.rating in ("N/A", ""):
+            manga.rating = manga_info.get("rating", "N/A")
+        if manga_info.get("title"):
+            manga.title = manga_info["title"]
+        newest = max(visible, key=lambda c: int(c.number))
+        newest_date = max((c.date for c in visible if c.date), default="")
+        state.update_manga(manga_url, newest.number, newest_date, title)
+        if newest.date and newest.date >= recent_cutoff:
+            print(f"[{reason}] {title}: notifying ตอนที่ {newest.number} ({newest.date})")
+            return {"manga": manga, "new_chapters": [newest],
+                    "previous_chapter": str(int(newest.number) - 1)}
+        print(f"[INFO] {reason} (baselined, not recent): {title} "
+              f"- ตอนที่ {newest.number} ({newest.date or 'no date'})")
+        return None
+
     def check_updates(self, state: StateManager) -> list[dict]:
         """Check for new chapters across all manga (date-based detection)."""
         updates = []
@@ -549,42 +585,13 @@ class GoMangaScraper:
             last_chapter = state.get_last_chapter(manga_url)
 
             if last_chapter is None:
-                # First time seeing this manga. Fetch detail, record a baseline,
-                # and announce its latest chapter — but only if that chapter is
-                # recent (see recent_cutoff). A stale title that just became
-                # visible through deeper pagination is baselined silently so we
-                # don't flood the chat with old series.
-                manga = self.scrape_manga_detail(manga_url)
-                visible = []
-                if manga:
-                    visible = [c for c in manga.chapters
-                               if c.number.isdigit() and not (c.date and c.date > today)]
-                if manga and visible:
-                    if not manga.cover_image:
-                        manga.cover_image = manga_info.get("cover_image", "")
-                    if manga.type_ == "UNKNOWN":
-                        manga.type_ = manga_info.get("type_", "UNKNOWN")
-                    if manga.rating in ("N/A", ""):
-                        manga.rating = manga_info.get("rating", "N/A")
-                    if manga_info.get("title"):
-                        manga.title = manga_info["title"]
-                    newest = max(visible, key=lambda c: int(c.number))
-                    newest_date = max((c.date for c in visible if c.date), default="")
-                    state.update_manga(manga_url, newest.number, newest_date, title)
-                    if newest.date and newest.date >= recent_cutoff:
-                        updates.append({
-                            "manga": manga,
-                            "new_chapters": [newest],
-                            "previous_chapter": str(int(newest.number) - 1),
-                        })
-                        print(f"[NEW] First-seen {title}: notifying latest ตอนที่ {newest.number}")
-                    else:
-                        print(f"[INFO] First-seen (baselined, not recent): {title} "
-                              f"- ตอนที่ {newest.number} ({newest.date or 'no date'})")
-                else:
-                    # No detail available yet — record baseline; notify next time.
-                    state.update_manga(manga_url, latest_chapter, "", title)
-                    print(f"[INFO] First time tracking (no detail): {title} - Chapter {latest_chapter}")
+                # First time seeing this manga: baseline it and announce the
+                # latest chapter if recent (silent for old titles just made
+                # visible by deeper pagination).
+                upd = self._resync_baseline(manga_url, manga_info, state, today,
+                                            recent_cutoff, "NEW First-seen")
+                if upd:
+                    updates.append(upd)
                 time.sleep(REQUEST_DELAY)
                 continue
 
@@ -598,9 +605,21 @@ class GoMangaScraper:
             except (ValueError, TypeError):
                 last_num = None
 
-            # Only fetch the detail page when the list suggests something changed
-            if current_num is not None and last_num is not None and current_num <= last_num:
-                continue
+            if current_num is not None and last_num is not None:
+                if current_num == last_num:
+                    continue  # no change — nothing new
+                if current_num < last_num:
+                    # The site's latest is *below* our baseline, which is
+                    # impossible for a normal ongoing series — the stored number
+                    # is corrupted (old bad parse) or the series was renumbered.
+                    # Re-sync from the detail page so it stops being skipped.
+                    upd = self._resync_baseline(manga_url, manga_info, state, today,
+                                                recent_cutoff, "RESYNC")
+                    if upd:
+                        updates.append(upd)
+                    time.sleep(REQUEST_DELAY)
+                    continue
+                # current_num > last_num -> fall through to detail + new chapters
 
             manga = self.scrape_manga_detail(manga_url)
             if not manga:
