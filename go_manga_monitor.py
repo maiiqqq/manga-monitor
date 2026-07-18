@@ -362,46 +362,25 @@ class GoMangaScraper:
             })
         return items
 
-    @staticmethod
-    def _find_next_page(soup) -> Optional[str]:
-        """Follow the listing's own 'next page' link so we don't have to guess
-        the site's pagination URL scheme."""
-        ln = soup.select_one('link[rel="next"]')
-        if ln and ln.get("href"):
-            return urljoin(BASE_URL, ln["href"])
-        for sel in ("a.next.page-numbers", "a.next", ".pagination a.next",
-                    ".hpage a.r", ".pagination a[rel='next']", "a[rel='next']"):
-            a = soup.select_one(sel)
-            if a and a.get("href"):
-                return urljoin(BASE_URL, a["href"])
-        return None
-
     def scrape_list_page(self, pages: int = None) -> list[dict]:
         """Scrape the manga listing (sorted by update), walking pagination.
 
-        The listing only shows ~20 cards per page, so a single page misses any
-        manga that updated but sits at rank 21+. We follow the page's own
-        'next' link (rather than guessing the URL scheme) up to `pages` pages
-        (default LIST_PAGES env, 5), stopping when there is no next link or a
-        page yields no new items — so it degrades safely to page-1-only.
+        The listing shows ~20 cards per page, so a single page misses any manga
+        that updated but sits at rank 21+. Pages are fetched with the site's
+        own update-sorted pagination (`?order=update&page=N`) so deeper pages
+        stay in most-recently-updated order — up to `pages` pages (default
+        LIST_PAGES env, 5), stopping when a page yields no new items.
         """
         if pages is None:
             pages = int(os.environ.get("LIST_PAGES", "5"))
         seen = set()
         manga_list = []
-        url = LIST_URL
         for page in range(1, max(1, pages) + 1):
+            url = LIST_URL if page == 1 else f"{LIST_URL}&page={page}"
             print(f"[INFO] Fetching list page {page}: {url}")
             soup = self._get(url)
             if not soup:
                 break
-            if page == 1:
-                # One-time diagnostic so we can see the real pagination markup.
-                pag = [a.get("href") for a in soup.select(
-                    ".pagination a, a.page-numbers, a.next, a.r, .hpage a")][:8]
-                ln = soup.select_one('link[rel="next"]')
-                print(f"[DIAG] link[rel=next]={ln.get('href') if ln else None} "
-                      f"| pagination hrefs={pag}")
             new_on_page = 0
             for m in self._parse_list_items(soup):
                 if m["url"] in seen:
@@ -411,11 +390,6 @@ class GoMangaScraper:
                 new_on_page += 1
             if new_on_page == 0:
                 break  # empty or duplicate page -> reached the end
-            nxt = self._find_next_page(soup)
-            if not nxt or nxt == url:
-                print("[INFO] no further 'next' link — stopping pagination")
-                break
-            url = nxt
             if page < pages:
                 time.sleep(REQUEST_DELAY)  # be polite between pages
 
@@ -573,6 +547,10 @@ class GoMangaScraper:
         """Check for new chapters across all manga (date-based detection)."""
         updates = []
         today = site_today()
+        # A first-seen manga is only announced if its latest chapter is this
+        # recent; otherwise it's just an old title newly visible via deeper
+        # pagination and we baseline it silently instead of spamming.
+        recent_cutoff = (datetime.now(SITE_TZ).date() - timedelta(days=1)).isoformat()
 
         # Get list of manga from the update page
         manga_list = self.scrape_list_page()
@@ -588,11 +566,11 @@ class GoMangaScraper:
             last_chapter = state.get_last_chapter(manga_url)
 
             if last_chapter is None:
-                # First time seeing this manga. "Notify all" mode: announce its
-                # current latest chapter once, then record the baseline so we
-                # don't repeat. Only manga currently on the ~20-item update list
-                # can hit this, and we send a single card (latest chapter only),
-                # so a newly-appearing series never dumps its whole backlog.
+                # First time seeing this manga. Fetch detail, record a baseline,
+                # and announce its latest chapter — but only if that chapter is
+                # recent (see recent_cutoff). A stale title that just became
+                # visible through deeper pagination is baselined silently so we
+                # don't flood the chat with old series.
                 manga = self.scrape_manga_detail(manga_url)
                 visible = []
                 if manga:
@@ -608,14 +586,18 @@ class GoMangaScraper:
                     if manga_info.get("title"):
                         manga.title = manga_info["title"]
                     newest = max(visible, key=lambda c: int(c.number))
-                    updates.append({
-                        "manga": manga,
-                        "new_chapters": [newest],
-                        "previous_chapter": str(int(newest.number) - 1),
-                    })
                     newest_date = max((c.date for c in visible if c.date), default="")
                     state.update_manga(manga_url, newest.number, newest_date, title)
-                    print(f"[NEW] First-seen {title}: notifying latest ตอนที่ {newest.number}")
+                    if newest.date and newest.date >= recent_cutoff:
+                        updates.append({
+                            "manga": manga,
+                            "new_chapters": [newest],
+                            "previous_chapter": str(int(newest.number) - 1),
+                        })
+                        print(f"[NEW] First-seen {title}: notifying latest ตอนที่ {newest.number}")
+                    else:
+                        print(f"[INFO] First-seen (baselined, not recent): {title} "
+                              f"- ตอนที่ {newest.number} ({newest.date or 'no date'})")
                 else:
                     # No detail available yet — record baseline; notify next time.
                     state.update_manga(manga_url, latest_chapter, "", title)
