@@ -553,11 +553,14 @@ class GoMangaScraper:
             manga.title = manga_info["title"]
         newest = max(visible, key=lambda c: int(c.number))
         newest_date = max((c.date for c in visible if c.date), default="")
-        state.update_manga(manga_url, newest.number, newest_date, title)
         if newest.date and newest.date >= recent_cutoff:
+            # Defer the baseline advance to after a successful send (via _commit).
             print(f"[{reason}] {title}: notifying ตอนที่ {newest.number} ({newest.date})")
             return {"manga": manga, "new_chapters": [newest],
-                    "previous_chapter": str(int(newest.number) - 1)}
+                    "previous_chapter": str(int(newest.number) - 1),
+                    "_commit": (manga_url, newest.number, newest_date, title)}
+        # Silent (old title) -> advance the baseline now, nothing to send.
+        state.update_manga(manga_url, newest.number, newest_date, title)
         print(f"[INFO] {reason} (baselined, not recent): {title} "
               f"- ตอนที่ {newest.number} ({newest.date or 'no date'})")
         return None
@@ -661,17 +664,22 @@ class GoMangaScraper:
                 newest_date = last_date
 
             if new_chapters:
+                # Defer advancing the baseline until the card is actually sent
+                # (see the _commit payload) so an interrupted run never marks a
+                # manga done without notifying — that would drop the update.
                 updates.append({
                     "manga": manga,
                     "new_chapters": new_chapters,
                     "previous_chapter": last_chapter,
+                    "_commit": (manga_url, new_latest, newest_date, title),
                 })
                 print(f"[UPDATE] {title}: {len(new_chapters)} new chapter(s) "
                       f"({last_chapter}/{last_date or '-'} -> {new_latest}/{newest_date or '-'})")
             else:
+                # Nothing to notify -> safe to advance the baseline right away.
+                state.update_manga(manga_url, new_latest, newest_date, title)
                 print(f"[INFO] {title}: number changed but no new dated chapters")
 
-            state.update_manga(manga_url, new_latest, newest_date, title)
             time.sleep(REQUEST_DELAY)  # Be polite
 
         return updates
@@ -1234,10 +1242,14 @@ def main():
                 for ch in new_chapters:
                     print(f"   ✨ ตอนที่ {ch.number} - {ch.url}")
 
-                # Send Telegram notification
+                # Send Telegram notification, then advance the baseline only on
+                # success so an interrupted run re-sends instead of dropping it.
                 if telegram_ready:
-                    notifier.send_update(update)
+                    if notifier.send_update(update) and update.get("_commit"):
+                        state.update_manga(*update["_commit"])
                     time.sleep(0.5)  # Rate limit
+                elif update.get("_commit"):
+                    state.update_manga(*update["_commit"])
 
             # Separate favourites summary
             fav_updates = [u for u in updates if u.get("is_bookmarked")]
