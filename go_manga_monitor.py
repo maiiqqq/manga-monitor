@@ -316,18 +316,9 @@ class GoMangaScraper:
                 return urljoin(BASE_URL, val)
         return ""
 
-    def scrape_list_page(self) -> list[dict]:
-        """Scrape the manga listing page sorted by update.
-
-        Uses the theme's structured markup (div.bsx) so we can reliably grab
-        the title, type, latest chapter, rating and cover image for each item.
-        """
-        print(f"[INFO] Fetching list page: {LIST_URL}")
-        soup = self._get(LIST_URL)
-        if not soup:
-            return []
-
-        manga_list = []
+    def _parse_list_items(self, soup) -> list[dict]:
+        """Parse the manga cards (div.bsx) on one listing page."""
+        items = []
         for item in soup.select("div.bsx"):
             link = item.find("a", href=True)
             if not link:
@@ -359,7 +350,7 @@ class GoMangaScraper:
             # Cover image
             cover_image = self._extract_img_src(item.find("img"))
 
-            manga_list.append({
+            items.append({
                 "title": title,
                 "url": full_url,
                 "latest_chapter": latest_chapter,
@@ -369,17 +360,41 @@ class GoMangaScraper:
                 "rating": rating,
                 "cover_image": cover_image,
             })
+        return items
 
-        # Deduplicate by URL
+    def scrape_list_page(self, pages: int = None) -> list[dict]:
+        """Scrape the manga listing (sorted by update), walking pagination.
+
+        The listing only shows ~20 cards per page, so a single page misses any
+        manga that updated but sits at rank 21+. We walk up to `pages` pages
+        (default from LIST_PAGES env, 5) and stop early when a page yields no
+        new items — which also makes an unexpected pagination URL degrade safely
+        to page-1-only instead of erroring.
+        """
+        if pages is None:
+            pages = int(os.environ.get("LIST_PAGES", "5"))
         seen = set()
-        unique = []
-        for m in manga_list:
-            if m["url"] not in seen:
+        manga_list = []
+        for page in range(1, max(1, pages) + 1):
+            url = LIST_URL if page == 1 else f"{BASE_URL}/manga/page/{page}/?order=update"
+            print(f"[INFO] Fetching list page {page}: {url}")
+            soup = self._get(url)
+            if not soup:
+                break
+            new_on_page = 0
+            for m in self._parse_list_items(soup):
+                if m["url"] in seen:
+                    continue
                 seen.add(m["url"])
-                unique.append(m)
+                manga_list.append(m)
+                new_on_page += 1
+            if new_on_page == 0:
+                break  # empty or duplicate page -> reached the end
+            if page < pages:
+                time.sleep(REQUEST_DELAY)  # be polite between pages
 
-        print(f"[INFO] Found {len(unique)} manga on list page")
-        return unique
+        print(f"[INFO] Found {len(manga_list)} manga across list pages")
+        return manga_list
 
     def scrape_manga_detail(self, manga_url: str) -> Optional[Manga]:
             """Scrape a manga detail page for full chapter list"""
@@ -662,7 +677,10 @@ class GoMangaScraper:
         """
         today = target_date or site_today()
         results = []
-        for manga_info in self.scrape_list_page():
+        # Walk deeper for a backfill so a busy day whose updates spill past the
+        # first pages is still caught in full.
+        backfill_pages = int(os.environ.get("BACKFILL_PAGES", "10"))
+        for manga_info in self.scrape_list_page(pages=backfill_pages):
             manga = self.scrape_manga_detail(manga_info["url"])
             if not manga:
                 continue
