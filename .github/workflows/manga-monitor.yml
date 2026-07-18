@@ -14,6 +14,10 @@ on:
         description: "Date to resend as YYYY-MM-DD (blank = today, site tz UTC+7)"
         type: string
         default: ""
+      backfill_dryrun:
+        description: "List only (log the matches, do NOT send to Telegram)"
+        type: boolean
+        default: false
 
 # Prevent overlapping scheduled runs from racing on the same push
 concurrency:
@@ -61,6 +65,7 @@ jobs:
           # manual dispatch requests a one-off resend of today's updates.
           BACKFILL_TODAY: ${{ inputs.backfill_today }}
           BACKFILL_DATE: ${{ inputs.backfill_date }}
+          BACKFILL_DRYRUN: ${{ inputs.backfill_dryrun }}
         run: |
           python bot_realtime.py
 
