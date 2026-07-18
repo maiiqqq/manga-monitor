@@ -81,11 +81,18 @@ def _scrape_and_notify(scraper, state, bookmarks, notifier):
         print("[INFO] no new chapters this cycle")
         return
     print(f"[INFO] {len(updates)} manga with updates")
+    sent = []
     for upd in updates:
         upd["is_bookmarked"] = bookmarks.is_bookmarked(upd["manga"].url)
-        notifier.send_update(upd)
+        # Advance the baseline only after a successful send so an interrupted
+        # run (e.g. cancelled mid-loop) re-sends the rest next time instead of
+        # silently marking them done.
+        if notifier.send_update(upd):
+            if upd.get("_commit"):
+                state.update_manga(*upd["_commit"])
+            sent.append(upd)
         time.sleep(0.5)
-    favs = [u for u in updates if u.get("is_bookmarked")]
+    favs = [u for u in sent if u.get("is_bookmarked")]
     if favs:
         notifier.send_favorites_summary(favs)
 
