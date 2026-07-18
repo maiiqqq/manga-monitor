@@ -362,25 +362,46 @@ class GoMangaScraper:
             })
         return items
 
+    @staticmethod
+    def _find_next_page(soup) -> Optional[str]:
+        """Follow the listing's own 'next page' link so we don't have to guess
+        the site's pagination URL scheme."""
+        ln = soup.select_one('link[rel="next"]')
+        if ln and ln.get("href"):
+            return urljoin(BASE_URL, ln["href"])
+        for sel in ("a.next.page-numbers", "a.next", ".pagination a.next",
+                    ".hpage a.r", ".pagination a[rel='next']", "a[rel='next']"):
+            a = soup.select_one(sel)
+            if a and a.get("href"):
+                return urljoin(BASE_URL, a["href"])
+        return None
+
     def scrape_list_page(self, pages: int = None) -> list[dict]:
         """Scrape the manga listing (sorted by update), walking pagination.
 
         The listing only shows ~20 cards per page, so a single page misses any
-        manga that updated but sits at rank 21+. We walk up to `pages` pages
-        (default from LIST_PAGES env, 5) and stop early when a page yields no
-        new items — which also makes an unexpected pagination URL degrade safely
-        to page-1-only instead of erroring.
+        manga that updated but sits at rank 21+. We follow the page's own
+        'next' link (rather than guessing the URL scheme) up to `pages` pages
+        (default LIST_PAGES env, 5), stopping when there is no next link or a
+        page yields no new items — so it degrades safely to page-1-only.
         """
         if pages is None:
             pages = int(os.environ.get("LIST_PAGES", "5"))
         seen = set()
         manga_list = []
+        url = LIST_URL
         for page in range(1, max(1, pages) + 1):
-            url = LIST_URL if page == 1 else f"{BASE_URL}/manga/page/{page}/?order=update"
             print(f"[INFO] Fetching list page {page}: {url}")
             soup = self._get(url)
             if not soup:
                 break
+            if page == 1:
+                # One-time diagnostic so we can see the real pagination markup.
+                pag = [a.get("href") for a in soup.select(
+                    ".pagination a, a.page-numbers, a.next, a.r, .hpage a")][:8]
+                ln = soup.select_one('link[rel="next"]')
+                print(f"[DIAG] link[rel=next]={ln.get('href') if ln else None} "
+                      f"| pagination hrefs={pag}")
             new_on_page = 0
             for m in self._parse_list_items(soup):
                 if m["url"] in seen:
@@ -390,6 +411,11 @@ class GoMangaScraper:
                 new_on_page += 1
             if new_on_page == 0:
                 break  # empty or duplicate page -> reached the end
+            nxt = self._find_next_page(soup)
+            if not nxt or nxt == url:
+                print("[INFO] no further 'next' link — stopping pagination")
+                break
+            url = nxt
             if page < pages:
                 time.sleep(REQUEST_DELAY)  # be polite between pages
 
