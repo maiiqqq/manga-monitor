@@ -116,6 +116,11 @@ def main():
             if not manga or not manga.chapters:
                 print(f"[CHECK] {url}: could not fetch / no chapters")
                 continue
+            # The detail page <h1> is the site's SEO header, not the manga name;
+            # keep the real title already stored in state when we have one.
+            kept_title = state.get_all_tracked().get(url, {}).get("title")
+            if kept_title:
+                manga.title = kept_title
             visible = [c for c in manga.chapters
                        if c.number.isdigit() and not (c.date and c.date > today)]
             newest = max(visible, key=lambda c: int(c.number)) if visible else manga.chapters[0]
