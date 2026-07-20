@@ -565,8 +565,13 @@ class GoMangaScraper:
               f"- ตอนที่ {newest.number} ({newest.date or 'no date'})")
         return None
 
-    def check_updates(self, state: StateManager) -> list[dict]:
-        """Check for new chapters across all manga (date-based detection)."""
+    def check_updates(self, state: StateManager, pages: int = None) -> list[dict]:
+        """Check for new chapters across all manga (date-based detection).
+
+        `pages` controls how deep the update listing is walked; a small value
+        (fast cycle) checks only the freshest manga at the top, while the
+        default deep scan also catches lower-ranked and newly-appearing titles.
+        """
         updates = []
         today = site_today()
         # A first-seen manga is only announced if its latest chapter is this
@@ -575,7 +580,7 @@ class GoMangaScraper:
         recent_cutoff = (datetime.now(SITE_TZ).date() - timedelta(days=1)).isoformat()
 
         # Get list of manga from the update page
-        manga_list = self.scrape_list_page()
+        manga_list = self.scrape_list_page(pages=pages)
 
         for manga_info in manga_list:
             manga_url = manga_info["url"]

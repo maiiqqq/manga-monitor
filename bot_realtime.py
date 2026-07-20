@@ -26,10 +26,13 @@ import requests
 import go_manga_monitor as gm
 
 # --- tuning ---
-# Seconds between go-manga checks. Kept below the per-run budget so each Actions
-# run scrapes several times (at ~0/90/180s) instead of only once, for fresher
-# detection. Tunable via env; on an always-on host you can lower it further.
-SCRAPE_INTERVAL = int(os.environ.get("SCRAPE_INTERVAL_SECONDS", "90"))
+# New chapters always jump to the top of the update listing, so we check the
+# first page(s) frequently (fast cycle) for near-real-time detection, and do a
+# full-depth scan only once at the start of each run for completeness/discovery.
+# This keeps the site load about the same as before while ~tripling how often we
+# notice a new chapter. All tunable via env.
+SCRAPE_INTERVAL = int(os.environ.get("SCRAPE_INTERVAL_SECONDS", "30"))  # fast cadence
+LIST_PAGES_FAST = int(os.environ.get("LIST_PAGES_FAST", "1"))  # pages per fast cycle
 LONGPOLL_TIMEOUT = 30     # seconds Telegram holds the getUpdates connection open
 MAX_RUNTIME = int(os.environ.get("MAX_RUNTIME_SECONDS", "0"))  # 0 = forever
 
@@ -74,9 +77,12 @@ def _handle_batch(updates, notifier, state, bookmarks, bot_state):
         print(f"[CMD] /{cmd} {arg}")
 
 
-def _scrape_and_notify(scraper, state, bookmarks, notifier):
-    """One go-manga check cycle: send cards + favourites summary."""
-    updates = scraper.check_updates(state)
+def _scrape_and_notify(scraper, state, bookmarks, notifier, pages=None):
+    """One go-manga check cycle: send cards + favourites summary.
+
+    `pages` limits how deep the listing is scanned (small = fast top-of-list
+    check; None = full-depth scan)."""
+    updates = scraper.check_updates(state, pages=pages)
     if not updates:
         print("[INFO] no new chapters this cycle")
         return
@@ -190,16 +196,22 @@ def main():
 
     started = time.time()
     print(f"[INFO] Real-time bot started — long-poll {LONGPOLL_TIMEOUT}s, "
-          f"scrape every {SCRAPE_INTERVAL}s, max_runtime {MAX_RUNTIME or 'forever'}")
+          f"fast scrape every {SCRAPE_INTERVAL}s (top {LIST_PAGES_FAST}p), "
+          f"deep scan at run start, max_runtime {MAX_RUNTIME or 'forever'}")
 
     last_scrape = 0.0
+    deep_done = False
     while True:
-        # 1) periodic go-manga check (runs immediately on the first loop)
+        # 1) go-manga check. The first cycle of the run does a full-depth scan
+        #    (completeness/discovery); the rest are fast top-of-list checks for
+        #    near-real-time detection of freshly posted chapters.
         if time.time() - last_scrape >= SCRAPE_INTERVAL:
+            pages = None if not deep_done else LIST_PAGES_FAST
             try:
-                _scrape_and_notify(scraper, state, bookmarks, notifier)
+                _scrape_and_notify(scraper, state, bookmarks, notifier, pages=pages)
             except Exception as e:
                 print(f"[ERROR] scrape cycle: {e}", file=sys.stderr)
+            deep_done = True
             last_scrape = time.time()
 
         # 2) stop before the next long-poll if we've hit the per-run time budget
