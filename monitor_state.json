@@ -139,9 +139,9 @@
   },
   "https://www.go-manga.com/disastrous-necromancer/": {
     "title": "Disastrous Necromancer ราชันนักอัญเชิญวิญญาณ",
-    "last_chapter": "288",
-    "last_chapter_date": "2026-07-15",
-    "last_check": "2026-07-18T06:30:01.061208"
+    "last_chapter": "289",
+    "last_chapter_date": "2026-07-21",
+    "last_check": "2026-07-21T11:18:22.979336"
   },
   "https://www.go-manga.com/absolute-regression/": {
     "title": "Absolute Regression ย้อนชะตาล่าข้ามภพ",
@@ -547,9 +547,9 @@
   },
   "https://www.go-manga.com/pig-slayer/": {
     "title": "Pig Slayer พิชิตโลกด้วยมีดเชือดหมู ก็สมเหตุสมผลใช่ไหม",
-    "last_chapter": "51",
-    "last_chapter_date": "2026-07-07",
-    "last_check": "2026-07-18T05:35:44.216190"
+    "last_chapter": "53",
+    "last_chapter_date": "2026-07-21",
+    "last_check": "2026-07-21T11:18:24.238696"
   },
   "https://www.go-manga.com/overlord-of-insects/": {
     "title": "Overlord of Insects อาชีพระดับเทพ เจ้าแห่งแมลงภัยพิบัติ",
@@ -676,5 +676,11 @@
     "last_chapter": "102",
     "last_chapter_date": "2026-07-20",
     "last_check": "2026-07-20T21:44:44.348383"
+  },
+  "https://www.go-manga.com/goddess-abundance-genius/": {
+    "title": "Goddess of Abundance and the Genius Rogue Apostle เทพีแห่งความอุดมสมบูรณ์กับอัครสาวกตัวแสบยอดอัจฉริยะ",
+    "last_chapter": "37",
+    "last_chapter_date": "2026-07-21",
+    "last_check": "2026-07-21T11:18:21.743634"
   }
 }
