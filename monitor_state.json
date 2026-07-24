@@ -187,9 +187,9 @@
   },
   "https://www.go-manga.com/pick-me-up/": {
     "title": "Pick Me Up, Infinite Gacha",
-    "last_chapter": "210",
-    "last_chapter_date": "",
-    "last_check": "2026-07-16T23:37:42.028441"
+    "last_chapter": "211",
+    "last_chapter_date": "2026-07-24",
+    "last_check": "2026-07-24T22:00:26.266610"
   },
   "https://www.go-manga.com/solo-farming-tower/": {
     "title": "Solo Farming In The Tower",
@@ -259,15 +259,15 @@
   },
   "https://www.go-manga.com/returnee-strategy-stream/": {
     "title": "The Returnee’s Hidden Strategy Stream สตรีมเมอร์หวนคืน55ชาติ",
-    "last_chapter": "38",
-    "last_chapter_date": "2026-07-17",
-    "last_check": "2026-07-17T22:58:35.211809"
+    "last_chapter": "39",
+    "last_chapter_date": "2026-07-24",
+    "last_check": "2026-07-24T22:00:23.895967"
   },
   "https://www.go-manga.com/reborn-demonic-battlefield/": {
     "title": "Reborn on the Demonic Cult Battlefield ยอดอัจฉริยะผู้หวนคืน",
-    "last_chapter": "49",
-    "last_chapter_date": "2026-07-17",
-    "last_check": "2026-07-17T22:58:36.419172"
+    "last_chapter": "50",
+    "last_chapter_date": "2026-07-24",
+    "last_check": "2026-07-24T22:00:29.850703"
   },
   "https://www.go-manga.com/martial-god-regressed/": {
     "title": "The Martial God Who Regressed Back to Level 2",
@@ -439,9 +439,9 @@
   },
   "https://www.go-manga.com/pay-win-martial/": {
     "title": "Pay-to-Win Martial God เทพสงครามเงินสด",
-    "last_chapter": "23",
-    "last_chapter_date": "2026-07-18",
-    "last_check": "2026-07-18T06:08:30.443044"
+    "last_chapter": "24",
+    "last_chapter_date": "2026-07-24",
+    "last_check": "2026-07-24T22:00:28.666352"
   },
   "https://www.go-manga.com/immediately-mistaken-actor/": {
     "title": "I Was Immediately Mistaken for a Monster Genius Actor เป็นนักแสดงอัจฉริยะโดยไม่ทันตั้งตัวเฉยเลย",
@@ -529,9 +529,9 @@
   },
   "https://www.go-manga.com/knight-king-return/": {
     "title": "The Knight King Who Returned With a God ราชาอัศวินผู้มากับเทพ",
-    "last_chapter": "140",
-    "last_chapter_date": "2026-07-07",
-    "last_check": "2026-07-18T05:35:40.660504"
+    "last_chapter": "142",
+    "last_chapter_date": "2026-07-24",
+    "last_check": "2026-07-24T22:00:21.521354"
   },
   "https://www.go-manga.com/dukedoms-legendary/": {
     "title": "Dukedom’s Legendary Prodigy ยอดอัจฉริยะแห่งตระกูลดยุก",
@@ -631,9 +631,9 @@
   },
   "https://www.go-manga.com/god-level-assassin/": {
     "title": "God-level Assassin, I Am the Shadow นักฆ่าระดับเทพ ข้าคือเงามืด",
-    "last_chapter": "125",
-    "last_chapter_date": "2026-07-01",
-    "last_check": "2026-07-18T05:36:01.105343"
+    "last_chapter": "129",
+    "last_chapter_date": "2026-07-24",
+    "last_check": "2026-07-24T22:00:25.085608"
   },
   "https://www.go-manga.com/max-level-player-100th/": {
     "title": "The Max-Level Player 100th Regression",
@@ -688,5 +688,17 @@
     "last_chapter": "263",
     "last_chapter_date": "2026-07-24",
     "last_check": "2026-07-24T04:03:19.105758"
+  },
+  "https://www.go-manga.com/return-flowery-mountain/": {
+    "title": "Return of the Flowery Mountain Sect หวนคืนสู่ฮวาซาน",
+    "last_chapter": "168",
+    "last_chapter_date": "2026-07-24",
+    "last_check": "2026-07-24T22:00:22.700344"
+  },
+  "https://www.go-manga.com/level-up-with-skills/": {
+    "title": "Level Up with Skills เลเวลอัปด้วยสกิลขั้นเทพ",
+    "last_chapter": "156",
+    "last_chapter_date": "2026-07-24",
+    "last_check": "2026-07-24T22:00:27.468257"
   }
 }
