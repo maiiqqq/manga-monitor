@@ -223,9 +223,9 @@
   },
   "https://www.go-manga.com/steel-eating-player/": {
     "title": "Steel-Eating Player",
-    "last_chapter": "101",
-    "last_chapter_date": "",
-    "last_check": "2026-07-16T23:37:42.030434"
+    "last_chapter": "102",
+    "last_chapter_date": "2026-07-25",
+    "last_check": "2026-07-25T21:56:56.368821"
   },
   "https://www.go-manga.com/heavenly-demon-cant/": {
     "title": "The Heavenly Demon Can’t Live a Normal Life มารสวรรค์จะมีชีวิตธรรมดาไม่ได้หรอก",
@@ -241,9 +241,9 @@
   },
   "https://www.go-manga.com/magic-emperor/": {
     "title": "Magic Emperor ราชาจอมเวทย์",
-    "last_chapter": "884",
-    "last_chapter_date": "2026-07-19",
-    "last_check": "2026-07-19T05:16:47.074660"
+    "last_chapter": "885",
+    "last_chapter_date": "2026-07-25",
+    "last_check": "2026-07-25T21:56:51.766193"
   },
   "https://www.go-manga.com/barbarians-fantasy-world/": {
     "title": "Barbarian’s Adventure in a Fantasy World ราชาคนเถื่อนตะลุยต่างโลก",
@@ -373,9 +373,9 @@
   },
   "https://www.go-manga.com/bad-born-blood/": {
     "title": "Bad Born Blood",
-    "last_chapter": "93",
-    "last_chapter_date": "2026-07-19",
-    "last_check": "2026-07-19T20:57:51.247574"
+    "last_chapter": "94",
+    "last_chapter_date": "2026-07-25",
+    "last_check": "2026-07-25T21:56:57.548240"
   },
   "https://www.go-manga.com/surviving-game-barbarian/": {
     "title": "Surviving the Game as a Barbarian เอาชีวิตรอดในเกมฉบับคนเถื่อน",
@@ -451,9 +451,9 @@
   },
   "https://www.go-manga.com/raising-villains-right-way/": {
     "title": "Raising Villains the Right Way ฉันกลายเป็นผู้สนับสนุนของเหล่าตัวร้าย",
-    "last_chapter": "44",
-    "last_chapter_date": "2026-07-21",
-    "last_check": "2026-07-22T00:39:49.637770"
+    "last_chapter": "45",
+    "last_chapter_date": "2026-07-25",
+    "last_check": "2026-07-25T21:56:55.225516"
   },
   "https://www.go-manga.com/the-academy-survival/": {
     "title": "The Extra’s Academy Survival Guide สุดยอดคู่มือเอาชีวิตรอดในอคาเดมี",
@@ -655,9 +655,9 @@
   },
   "https://www.go-manga.com/nation-dungeon-architect/": {
     "title": "Nation-Class Dungeon Architect นักออกแบบเขาวงกตระดับชาติ",
-    "last_chapter": "29",
-    "last_chapter_date": "2026-07-18",
-    "last_check": "2026-07-18T20:36:55.922978"
+    "last_chapter": "30",
+    "last_chapter_date": "2026-07-25",
+    "last_check": "2026-07-25T21:56:52.921745"
   },
   "https://www.go-manga.com/dark-mages-enlistment/": {
     "title": "The Dark Mage’s Return to Enlistment กลับโลกมนุษย์ทั้งที พรุ่งนี้ต้องเกณฑ์ทหารซะงั้น",
@@ -706,5 +706,17 @@
     "last_chapter": "113",
     "last_chapter_date": "2026-07-25",
     "last_check": "2026-07-25T10:13:30.352539"
+  },
+  "https://www.go-manga.com/kidnapped-dragons/": {
+    "title": "Kidnapped Dragons ดีลลับฉบับลักพาตัวมังกร",
+    "last_chapter": "35",
+    "last_chapter_date": "2026-07-25",
+    "last_check": "2026-07-25T21:56:50.589582"
+  },
+  "https://www.go-manga.com/regressor-makes-everything/": {
+    "title": "The Regressor Makes Everything ผู้หวนคืนผู้สร้างทุกสรรพสิ่ง",
+    "last_chapter": "33",
+    "last_chapter_date": "2026-07-25",
+    "last_check": "2026-07-25T21:56:54.072141"
   }
 }
