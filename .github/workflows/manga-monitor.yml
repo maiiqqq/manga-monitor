@@ -82,26 +82,53 @@ jobs:
 
       - name: Commit state changes (if any)
         if: always()
+        # The state files are JSON dicts, so a rejected push is resolved by
+        # merging them per key on top of the current remote tip (merge_state.py)
+        # instead of rebasing. A rebase hits a text conflict as soon as two runs
+        # touch the same file — a manual check_urls/backfill dispatch runs in its
+        # own concurrency group alongside the chain — and `rebase --abort` then
+        # leaves the branch behind the remote, so every retry was rejected again
+        # and the step always ended in "failed to push after 5 attempts".
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          for f in monitor_state.json bookmarks.json bot_state.json; do
-            [ -f "$f" ] && git add "$f"
+
+          STATE_FILES="monitor_state.json bookmarks.json bot_state.json"
+          BASE_SHA=$(git rev-parse HEAD)   # the tree this run started from
+          SAVE="$RUNNER_TEMP/state"
+          mkdir -p "$SAVE/ours" "$SAVE/base"
+          # `git reset --hard` below rewrites the working tree, so stash the state
+          # the bot just wrote (plus the merge helper) outside the repo first.
+          cp merge_state.py "$SAVE/merge_state.py"
+          for f in $STATE_FILES; do
+            if [ -f "$f" ]; then cp "$f" "$SAVE/ours/$f"; fi
+            git show "$BASE_SHA:$f" > "$SAVE/base/$f" 2>/dev/null || rm -f "$SAVE/base/$f"
           done
-          if git diff --cached --quiet; then
-            echo "No state changes to commit"
-            exit 0
-          fi
-          git commit -m "Update state [$(date -u +'%Y-%m-%d %H:%M:%S UTC')]"
+
           for attempt in 1 2 3 4 5; do
+            git fetch origin master
+            # Rebuild the commit directly on the remote tip so the push is always
+            # a fast-forward, then 3-way merge our state into the remote's.
+            git reset --hard origin/master
+            for f in $STATE_FILES; do
+              [ -f "$SAVE/ours/$f" ] || continue
+              git show "origin/master:$f" > "$SAVE/theirs-$f" 2>/dev/null \
+                || rm -f "$SAVE/theirs-$f"
+              cp "$SAVE/ours/$f" "$f"
+              python3 "$SAVE/merge_state.py" "$f" "$SAVE/base/$f" "$SAVE/theirs-$f"
+              git add -- "$f"
+            done
+            if git diff --cached --quiet; then
+              echo "No state changes to commit"
+              exit 0
+            fi
+            git commit -m "Update state [$(date -u +'%Y-%m-%d %H:%M:%S UTC')]"
             if git push origin HEAD:master; then
               echo "Push succeeded on attempt $attempt"
               exit 0
             fi
-            echo "Push rejected (attempt $attempt), rebasing..."
-            git fetch origin master
-            git rebase origin/master || git rebase --abort
+            echo "Push rejected (attempt $attempt) — remote moved, re-merging..."
             sleep $((attempt * 3))
           done
           echo "Failed to push after 5 attempts"
