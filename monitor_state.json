@@ -25,9 +25,9 @@
   },
   "https://www.go-manga.com/nebulas-civilization/": {
     "title": "The Nebula’s Civilization",
-    "last_chapter": "132",
-    "last_chapter_date": "2026-07-29",
-    "last_check": "2026-07-29T09:48:22.207277"
+    "last_chapter": "136",
+    "last_chapter_date": "2026-08-06",
+    "last_check": "2026-08-07T00:31:31.456651"
   },
   "https://www.go-manga.com/blade-of-retribution/": {
     "title": "Blade of Retribution ดาบแห่งการลงทัณฑ์",
@@ -187,9 +187,9 @@
   },
   "https://www.go-manga.com/pick-me-up/": {
     "title": "Pick Me Up, Infinite Gacha",
-    "last_chapter": "212",
-    "last_chapter_date": "2026-07-30",
-    "last_check": "2026-07-30T21:26:23.939968"
+    "last_chapter": "213",
+    "last_chapter_date": "2026-08-06",
+    "last_check": "2026-08-07T00:31:32.540862"
   },
   "https://www.go-manga.com/solo-farming-tower/": {
     "title": "Solo Farming In The Tower",
@@ -397,9 +397,9 @@
   },
   "https://www.go-manga.com/mr-devourer-please-act-like-a-final-boss/": {
     "title": "Mr Devourer Please Act Like a Final Boss ทำตัวให้สมกับเป็นมอนสเตอร์บอสหน่อยสิ คุณสวอลโลว์!",
-    "last_chapter": "135",
-    "last_chapter_date": "2026-08-01",
-    "last_check": "2026-08-01T23:10:36.300938"
+    "last_chapter": "136",
+    "last_chapter_date": "2026-08-06",
+    "last_check": "2026-08-07T00:31:33.514409"
   },
   "https://www.go-manga.com/lazy-prince-becomes-genius/": {
     "title": "The Lazy Prince Becomes A Genius",
@@ -766,5 +766,11 @@
     "last_chapter": "104",
     "last_chapter_date": "2026-08-05",
     "last_check": "2026-08-05T21:12:19.390228"
+  },
+  "https://www.go-manga.com/chairman-pharmaceutical/": {
+    "title": "The Chairman of Pharmaceutical Company Is a Poison King ผู้ปฏิเสธมานา สู่จ้าวแห่งพิษไร้ขีดจำกัด",
+    "last_chapter": "29",
+    "last_chapter_date": "2026-08-06",
+    "last_check": "2026-08-07T00:31:30.462351"
   }
 }
