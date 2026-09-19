@@ -241,9 +241,9 @@
   },
   "https://www.go-manga.com/magic-emperor/": {
     "title": "Magic Emperor ราชาจอมเวทย์",
-    "last_chapter": "910",
-    "last_chapter_date": "2026-09-18",
-    "last_check": "2026-09-19T20:23:01.044691"
+    "last_chapter": "911",
+    "last_chapter_date": "2026-09-19",
+    "last_check": "2026-09-19T20:27:27.973592"
   },
   "https://www.go-manga.com/barbarians-fantasy-world/": {
     "title": "Barbarian’s Adventure in a Fantasy World ราชาคนเถื่อนตะลุยต่างโลก",
@@ -583,9 +583,9 @@
   },
   "https://www.go-manga.com/murim-psychopath/": {
     "title": "Murim Psychopath จอมมารคลั่งแห่งยุทธภพ",
-    "last_chapter": "41",
-    "last_chapter_date": "2026-09-18",
-    "last_check": "2026-09-19T20:22:59.819949"
+    "last_chapter": "42",
+    "last_chapter_date": "2026-09-19",
+    "last_check": "2026-09-19T20:27:26.996139"
   },
   "https://www.go-manga.com/demonic-instructor-returns/": {
     "title": "The Demonic Cult Instructor Returns ย้อนเวลากู้ยุทธภพ",
@@ -631,9 +631,9 @@
   },
   "https://www.go-manga.com/god-level-assassin/": {
     "title": "God-level Assassin, I Am the Shadow นักฆ่าระดับเทพ ข้าคือเงามืด",
-    "last_chapter": "142",
+    "last_chapter": "143",
     "last_chapter_date": "2026-09-19",
-    "last_check": "2026-09-19T20:23:02.174063"
+    "last_check": "2026-09-19T20:27:28.966565"
   },
   "https://www.go-manga.com/max-level-player-100th/": {
     "title": "The Max-Level Player 100th Regression",
@@ -946,5 +946,11 @@
     "last_chapter": "115",
     "last_chapter_date": "2026-09-16",
     "last_check": "2026-09-16T09:18:33.398563"
+  },
+  "https://www.go-manga.com/end-world-war/": {
+    "title": "The End of the World War ศึกชี้ชะตาสงครามวันสิ้นโลก",
+    "last_chapter": "7",
+    "last_chapter_date": "2026-09-19",
+    "last_check": "2026-09-19T20:27:26.001609"
   }
 }
