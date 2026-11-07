@@ -97,10 +97,12 @@ jobs:
           STATE_FILES="monitor_state.json bookmarks.json bot_state.json"
           BASE_SHA=$(git rev-parse HEAD)   # the tree this run started from
           SAVE="$RUNNER_TEMP/state"
+          umask 077  # Captured push output can contain credentials before redaction
           mkdir -p "$SAVE/ours" "$SAVE/base"
           # `git reset --hard` below rewrites the working tree, so stash the state
           # the bot just wrote (plus the merge helper) outside the repo first.
           cp merge_state.py "$SAVE/merge_state.py"
+          cp .github/scripts/push_diagnostics.py "$SAVE/push_diagnostics.py"
           for f in $STATE_FILES; do
             if [ -f "$f" ]; then cp "$f" "$SAVE/ours/$f"; fi
             git show "$BASE_SHA:$f" > "$SAVE/base/$f" 2>/dev/null || rm -f "$SAVE/base/$f"
@@ -108,6 +110,8 @@ jobs:
 
           for attempt in 1 2 3 4 5; do
             git fetch origin master
+            # A successful push can advance origin/master; retain the fetched tip.
+            REMOTE_SHA=$(git rev-parse origin/master)
             # Rebuild the commit directly on the remote tip so the push is always
             # a fast-forward, then 3-way merge our state into the remote's.
             git reset --hard origin/master
@@ -124,11 +128,22 @@ jobs:
               exit 0
             fi
             git commit -m "Update state [$(date -u +'%Y-%m-%d %H:%M:%S UTC')]"
-            if git push origin HEAD:master; then
+            # Capture both streams and the real push status; print only redacted
+            # diagnostics. Keep retry policy unchanged until GM-003.
+            PUSH_LOG="$SAVE/push-attempt-$attempt.log"
+            if git push origin HEAD:master > "$PUSH_LOG" 2>&1; then
+              push_exit=0
+            else
+              push_exit=$?
+            fi
+            python3 "$SAVE/push_diagnostics.py" "$PUSH_LOG" "$push_exit" "$attempt" \
+              "$(git rev-parse HEAD)" "$REMOTE_SHA"
+            rm -f -- "$PUSH_LOG"
+            if [ "$push_exit" -eq 0 ]; then
               echo "Push succeeded on attempt $attempt"
               exit 0
             fi
-            echo "Push rejected (attempt $attempt) — remote moved, re-merging..."
+            echo "Push failed (attempt $attempt); retrying with existing state merge procedure."
             sleep $((attempt * 3))
           done
           echo "Failed to push after 5 attempts"
