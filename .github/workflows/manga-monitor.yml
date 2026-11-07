@@ -58,6 +58,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Manga Bot (looped, near real-time)
+        id: run_bot
         # Hard cap the step so a stuck Telegram long-poll can never hold the
         # runner for the full job timeout. Slightly above MAX_RUNTIME_SECONDS.
         timeout-minutes: 5
@@ -80,8 +81,21 @@ jobs:
         run: |
           python bot_realtime.py
 
-      - name: Commit state changes (if any)
+      - name: Snapshot state for recovery
+        id: snapshot_state
         if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WORKFLOW_PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          python3 .github/scripts/snapshot_state.py --source . \
+            --destination "$RUNNER_TEMP/state-recovery-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+      - name: Commit state changes (if any)
+        id: persist_state
+        if: always() && steps.snapshot_state.outcome == 'success'
         # The state files are JSON dicts, so a rejected push is resolved by
         # merging them per key on top of the current remote tip (merge_state.py)
         # instead of rebasing. A rebase hits a text conflict as soon as two runs
@@ -150,6 +164,19 @@ jobs:
           exit 1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload state recovery snapshot
+        id: upload_state_recovery
+        if: always() && (steps.snapshot_state.outcome == 'failure' || steps.persist_state.outcome == 'failure' || steps.run_bot.outcome == 'failure')
+        continue-on-error: true  # Preserve the original failure if upload also fails
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: manga-state-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/state-recovery-${{ github.run_id }}-${{ github.run_attempt }}/artifact/
+          retention-days: 7
+          if-no-files-found: warn
+          include-hidden-files: false
+          archive: true
 
       - name: Keep the loop alive (self-chain next run)
         if: always()
