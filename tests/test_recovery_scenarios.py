@@ -5,6 +5,7 @@ mock HTTP responses. Git push rejection uses only temporary local repositories.
 Remaining merge limitations are asserted deliberately for the recovery runbook.
 """
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
+from datetime import datetime
 import importlib.util
 import io
 import json
@@ -128,6 +129,12 @@ class RecoveryScenarios(unittest.TestCase):
                              gm.TelegramNotifier("fixture-token", "fixture-chat"))
         return state
 
+    def cycle_on_day(self, day):
+        with mock.patch.object(gm, "site_today", return_value=day), \
+                mock.patch.object(gm, "datetime", wraps=gm.datetime) as clock:
+            clock.now.return_value = datetime.fromisoformat(day + "T12:00:00+07:00")
+            return self.cycle()
+
     def run_main(self, **env):
         with mock.patch.dict(os.environ, env), \
                 mock.patch.object(gm, "GoMangaScraper", return_value=self.scraper), \
@@ -193,6 +200,164 @@ class RecoveryScenarios(unittest.TestCase):
         self.assertEqual(self.delivered, [])
         self.assertEqual(self.chapter_on_disk(), "10")
         self.assertNotIn("notified", self.out.getvalue())
+
+    def test_targeted_first_seen_future_only_does_not_send_or_create_baseline(self):
+        self.path.write_text("{}")
+        self.manga.chapters[0].date = "2026-11-09"
+        self.run_main(CHECK_URLS=URL)
+        self.assertEqual(self.delivered, [])
+        self.assertEqual(json.loads(self.path.read_text()), {})
+
+    def test_targeted_future_only_does_not_lower_a_renumbered_baseline(self):
+        self.path.write_text(json.dumps({URL: baseline(20)}))
+        self.manga.chapters[0].date = "2026-11-09"
+        self.run_main(CHECK_URLS=URL)
+        self.assertEqual(self.delivered, [])
+        self.assertEqual(self.chapter_on_disk(), "20")
+
+    def test_targeted_mixed_dates_uses_latest_visible_chapter(self):
+        self.manga.chapters.insert(0, gm.Chapter("12", "Future chapter", URL + "12/", "2026-11-09"))
+        self.manga.latest_chapter = "12"
+        self.run_main(CHECK_URLS=URL)
+        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.chapter_on_disk(), "11")
+        self.assertNotIn(URL + "12/", self.delivered[0][1]["text"])
+
+    def test_targeted_photo_caption_reports_selected_visible_chapter(self):
+        self.manga.cover_image = "https://example.invalid/cover.jpg"
+        self.manga.chapters.insert(0, gm.Chapter("12", "Future chapter", URL + "12/", "2026-11-09"))
+        self.manga.latest_chapter = "12"
+        self.run_main(CHECK_URLS=URL)
+        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.delivered[0][0], "sendPhoto")
+        self.assertIn("10 → 11", self.delivered[0][1]["caption"])
+        self.assertNotIn("10 → 12", self.delivered[0][1]["caption"])
+
+    def test_normal_first_seen_future_only_notifies_on_release_day(self):
+        self.path.write_text("{}")
+        self.manga.chapters[0].date = "2026-11-09"
+        self.cycle_on_day("2026-11-08")
+        self.assertEqual(json.loads(self.path.read_text()), {})
+        self.assertEqual(self.delivered, [])
+        self.cycle_on_day("2026-11-09")
+        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.chapter_on_disk(), "11")
+
+    def test_normal_renumber_future_only_notifies_on_release_day(self):
+        self.path.write_text(json.dumps({URL: baseline(20)}))
+        self.manga.chapters[0].date = "2026-11-09"
+        self.cycle_on_day("2026-11-08")
+        self.assertEqual(self.chapter_on_disk(), "20")
+        self.assertEqual(self.delivered, [])
+        self.cycle_on_day("2026-11-09")
+        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.chapter_on_disk(), "11")
+
+    def test_normal_first_seen_missing_detail_is_retried(self):
+        self.path.write_text("{}")
+        self.scraper.scrape_manga_detail.side_effect = [None, self.manga]
+        self.cycle_on_day(DAY)
+        self.assertEqual(json.loads(self.path.read_text()), {})
+        self.cycle_on_day(DAY)
+        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.chapter_on_disk(), "11")
+
+    def test_normal_renumber_missing_detail_keeps_baseline_until_confirmation(self):
+        self.path.write_text(json.dumps({URL: baseline(20)}))
+        self.scraper.scrape_manga_detail.side_effect = [None, self.manga]
+        self.cycle_on_day(DAY)
+        self.assertEqual(self.chapter_on_disk(), "20")
+        self.cycle_on_day(DAY)
+        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.chapter_on_disk(), "11")
+
+    def test_invalid_startup_state_blocks_all_telegram_and_preserves_bytes(self):
+        for path in (self.path, self.bookmarks, self.bot_state):
+            for invalid in (b'{"broken":', b'[]', b'null', b'{"bad": NaN}'):
+                with self.subTest(file=path.name, invalid=invalid):
+                    before = {p: p.read_bytes() for p in (self.path, self.bookmarks, self.bot_state)}
+                    path.write_bytes(invalid)
+                    self.calls.clear()
+                    try:
+                        with self.assertRaises(ValueError):
+                            self.run_main()
+                        self.assertEqual(self.calls, [])
+                        self.assertEqual(path.read_bytes(), invalid)
+                    finally:
+                        for p, raw in before.items():
+                            p.write_bytes(raw)
+
+    def test_unreadable_existing_startup_state_blocks_before_telegram(self):
+        original_open = open
+        def denied(file, mode="r", *args, **kwargs):
+            if isinstance(file, (str, Path)) and Path(file) == self.path and "r" in mode:
+                raise PermissionError("fixture-sensitive-error-not-for-logs")
+            return original_open(file, mode, *args, **kwargs)
+        before = self.path.read_bytes()
+        with mock.patch("builtins.open", side_effect=denied):
+            with self.assertRaises(ValueError) as error:
+                self.run_main()
+        self.assertNotIn("fixture-sensitive-error-not-for-logs", str(error.exception))
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_missing_actions_state_is_not_silently_initialized(self):
+        for path in (self.path, self.bookmarks, self.bot_state):
+            with self.subTest(file=path.name):
+                raw = path.read_bytes()
+                path.unlink()
+                self.calls.clear()
+                try:
+                    with mock.patch.dict(os.environ, {"GITHUB_ACTIONS": "true"}):
+                        with self.assertRaises(ValueError):
+                            self.run_main()
+                    self.assertEqual(self.calls, [])
+                    self.assertFalse(path.exists())
+                finally:
+                    path.write_bytes(raw)
+
+    def test_failed_startup_leaves_corrupt_original_for_recovery_snapshot(self):
+        raw = b'{"broken":'
+        self.path.write_bytes(raw)
+        with self.assertRaises(ValueError):
+            self.run_main()
+        destination = self.tmp / "recovery"
+        result = subprocess.run([sys.executable, str(ROOT / ".github/scripts/snapshot_state.py"),
+            "--source", str(self.tmp), "--destination", str(destination)],
+            text=True, capture_output=True, timeout=5)
+        self.assertEqual(result.returncode, 1)
+        manifest = json.loads((destination / "artifact/manifest.json").read_text())
+        self.assertEqual(manifest["files"]["monitor_state.json"]["status"], "invalid_json")
+        self.assertEqual((destination / "original/monitor_state.json").read_bytes(), raw)
+        self.assertEqual((destination / "artifact/monitor_state.json").read_bytes(), raw)
+        self.assertEqual(self.path.read_bytes(), raw)
+        self.assertEqual(self.calls, [])
+
+    def test_symlink_startup_state_is_rejected_without_touching_its_target(self):
+        for path in (self.path, self.bookmarks, self.bot_state):
+            with self.subTest(file=path.name):
+                raw = path.read_bytes()
+                target = self.tmp / ("target-" + path.name)
+                target.write_bytes(raw)
+                path.unlink()
+                path.symlink_to(target)
+                self.calls.clear()
+                try:
+                    with self.assertRaises(ValueError):
+                        self.run_main()
+                    self.assertEqual(self.calls, [])
+                    self.assertEqual(target.read_bytes(), raw)
+                finally:
+                    path.unlink()
+                    path.write_bytes(raw)
+
+    def test_missing_local_state_remains_available_for_first_installation(self):
+        path = self.tmp / "new-state.json"
+        with mock.patch.dict(os.environ, {"GITHUB_ACTIONS": ""}):
+            self.assertEqual(gm.StateManager(path).data, {})
+            self.assertEqual(gm.BookmarkManager(path).data, {})
+            self.assertEqual(gm.load_bot_state(path), {})
+        self.assertFalse(path.exists())
 
     def test_backfill_preview_has_no_telegram_calls_or_state_writes(self):
         original = self.path.read_bytes()

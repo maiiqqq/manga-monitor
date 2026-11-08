@@ -9,6 +9,7 @@ import html as html_lib
 import json
 import os
 import re
+import stat
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -109,19 +110,43 @@ class Manga:
 
 
 # ============== STATE MANAGEMENT ==============
+class RuntimeStateError(ValueError):
+    """Existing runtime evidence must not become a silent empty baseline."""
+
+
+def _load_runtime_object(path: Path) -> dict:
+    message = f"Cannot load runtime state {path.name}; refusing an empty fallback"
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+            raise RuntimeStateError(message) from None
+        return {}  # Local first installation only; existing invalid files fail.
+    except OSError:
+        raise RuntimeStateError(message) from None
+    if not stat.S_ISREG(mode):
+        raise RuntimeStateError(message)
+
+    def reject_constant(_value):
+        raise ValueError("Nonstandard JSON constant")
+
+    try:
+        with open(path, "r", encoding="utf-8") as source:
+            data = json.load(source, parse_constant=reject_constant)
+    except (OSError, ValueError, UnicodeError, RecursionError):
+        raise RuntimeStateError(message) from None
+    if not isinstance(data, dict):
+        raise RuntimeStateError(message)
+    return data
+
+
 class StateManager:
     def __init__(self, state_file: Path):
         self.state_file = state_file
         self.data = self._load()
 
     def _load(self) -> dict:
-        if self.state_file.exists():
-            try:
-                with open(self.state_file, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError):
-                return {}
-        return {}
+        return _load_runtime_object(self.state_file)
 
     def save(self):
         with open(self.state_file, "w", encoding="utf-8") as f:
@@ -155,13 +180,7 @@ class BookmarkManager:
         self.data = self._load()
 
     def _load(self) -> dict:
-        if self.path.exists():
-            try:
-                with open(self.path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError):
-                return {}
-        return {}
+        return _load_runtime_object(self.path)
 
     def save(self):
         with open(self.path, "w", encoding="utf-8") as f:
@@ -189,13 +208,7 @@ class BookmarkManager:
 
 # ============== BOT STATE (Telegram offset) ==============
 def load_bot_state(path: Path) -> dict:
-    if path.exists():
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return {}
-    return {}
+    return _load_runtime_object(path)
 
 
 def save_bot_state(path: Path, data: dict):
@@ -542,8 +555,7 @@ class GoMangaScraper:
                        if c.number.isdigit() and not (c.date and c.date > today)]
         title = manga_info.get("title") or (manga.title if manga else manga_url)
         if not (manga and visible):
-            state.update_manga(manga_url, manga_info.get("latest_chapter", ""), "", title)
-            print(f"[INFO] {reason} (no detail): {title}")
+            print(f"[INFO] {reason} (no eligible detail; baseline unchanged): {title}")
             return None
         if not manga.cover_image:
             manga.cover_image = manga_info.get("cover_image", "")
@@ -962,7 +974,7 @@ class TelegramNotifier:
             f"📖 <b>{title}</b>",
             f"{type_emoji} {type_label}  ·  ⭐ {manga.rating}",
             "",
-            f"✨ <b>อัปเดต {n} ตอน</b>  (ตอนที่ {prev_chapter} → {manga.latest_chapter})",
+            f"✨ <b>อัปเดต {n} ตอน</b>  (ตอนที่ {prev_chapter} → {new_chapters[-1].number if new_chapters else prev_chapter})",
         ]
 
         # Always spell out how many and exactly which chapters. List them all

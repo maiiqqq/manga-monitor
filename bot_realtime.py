@@ -162,7 +162,11 @@ def main():
                 manga.title = kept_title
             visible = [c for c in manga.chapters
                        if c.number.isdigit() and not (c.date and c.date > today)]
-            newest = max(visible, key=lambda c: int(c.number)) if visible else manga.chapters[0]
+            if not visible:
+                print(f"[CHECK] {manga.title}: no visible numbered chapters; baseline unchanged")
+                time.sleep(gm.REQUEST_DELAY)
+                continue
+            newest = max(visible, key=lambda c: int(c.number))
             base = state.get_last_chapter(url)
             site_num = int(newest.number) if newest.number.isdigit() else None
             base_num = int(base) if (base and str(base).isdigit()) else None
