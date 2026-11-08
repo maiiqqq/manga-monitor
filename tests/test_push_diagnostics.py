@@ -81,6 +81,19 @@ class PushDiagnosticsTests(unittest.TestCase):
     def test_exit_code_does_not_become_diagnostics_exit_code(self):
         self.expect_category("fatal: unexpected failure", "unknown", 128)
 
+    def test_command_timeout_exit_is_retryable_without_error_text(self):
+        self.expect_category("", "transient_network", 124)
+
+    def test_category_only_mode_never_prints_raw_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "push.log"
+            path.write_text("remote: fatal error in commit_refs_rules raw-secret")
+            result = subprocess.run(
+                [sys.executable, str(HELPER), "--category-only", str(path), "128", "1", "a"*40, "b"*40],
+                text=True, capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), "transient_server")
+
     def test_secrets_and_credentials_are_redacted_without_changing_category(self):
         result = self.diagnose(
             "fatal: HTTP 500 https://x-access-token:url-secret@github.com/repo"

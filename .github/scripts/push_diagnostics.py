@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Classify git push diagnostics without changing retry policy or exit status."""
+import argparse
 import os
 from pathlib import Path
 import re
-import sys
 
 
 def classify_push_error(output: str) -> str:
@@ -64,18 +64,30 @@ def redact_push_output(output: str) -> str:
 
 
 def main() -> None:
-    log_path, exit_code, attempt, local_sha, remote_sha = sys.argv[1:]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--category-only", action="store_true")
+    parser.add_argument("--operation", choices=("push", "fetch", "confirm"), default="push")
+    for name in ("log_path", "exit_code", "attempt", "local_sha", "remote_sha"):
+        parser.add_argument(name)
+    args = parser.parse_args()
+    log_path, exit_code = args.log_path, args.exit_code
     try:
         output = Path(log_path).read_text(encoding="utf-8", errors="replace")
     except OSError:
         output = "[push diagnostics unavailable]"
     category = "success" if exit_code == "0" else classify_push_error(output)
+    if category == "unknown" and exit_code in ("124", "137"):
+        category = "transient_network"
+    if args.category_only:
+        print(category)
+        return
+    label = "Push result" if args.operation == "push" else f"Git {args.operation} result"
     print(
-        f"Push result: attempt={attempt} exit_code={exit_code} category={category} "
-        f"local_sha={local_sha} remote_sha={remote_sha}"
+        f"{label}: attempt={args.attempt} exit_code={exit_code} category={category} "
+        f"local_sha={args.local_sha} remote_sha={args.remote_sha}"
     )
     for line in redact_push_output(output).splitlines():
-        print(f"push | {line}")
+        print(f"{args.operation} | {line}")
 
 
 if __name__ == "__main__":

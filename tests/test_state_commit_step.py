@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 
@@ -22,7 +23,8 @@ def git(*args, cwd):
 
 
 class StateCommitStepTests(unittest.TestCase):
-    def run_step(self, failure=None, change=True, state_overrides=None, bot_outcome="success"):
+    def run_step(self, failure=None, change=True, state_overrides=None, bot_outcome="success",
+                 scenario=None, persist_budget=None, slow_copy=False, short_deadline=False):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         tmp = Path(self.tmp.name)
@@ -57,19 +59,25 @@ class StateCommitStepTests(unittest.TestCase):
             else:
                 (runner / name).write_bytes(value)
         git_wrapper = bin_dir / "git"
-        git_wrapper.write_text(
-            "#!/usr/bin/env python3\n"
-            "import os, subprocess, sys\n"
-            "if sys.argv[1:2] == ['push']:\n"
-            "    if os.environ.get('SIMULATED_PUSH_FAILURE'):\n"
-            "        print(os.environ['SIMULATED_PUSH_FAILURE'])\n"
-            "        print('diagnostic stderr marker', file=sys.stderr)\n"
-            "        sys.exit(128)\n"
-            "sys.exit(subprocess.call([os.environ['REAL_GIT'], *sys.argv[1:]]))\n")
+        shutil.copy2(ROOT / "tests/fake_git.py", git_wrapper)
         git_wrapper.chmod(0o755)
         sleep_wrapper = bin_dir / "sleep"
-        sleep_wrapper.write_text("#!/bin/sh\nexit 0\n")
+        sleep_wrapper.write_text('#!/bin/sh\nprintf "%s\\n" "$1" >> "$PERSIST_TEST_SLEEPS"\n')
         sleep_wrapper.chmod(0o755)
+        if slow_copy:
+            cp_wrapper = bin_dir / "cp"
+            cp_wrapper.write_text(
+                "#!/usr/bin/env python3\nimport subprocess,sys,time\n"
+                "if sys.argv[1] == '.github/scripts/persist_state.sh': time.sleep(4)\n"
+                f"sys.exit(subprocess.call([{shutil.which('cp')!r}, *sys.argv[1:]]))\n")
+            cp_wrapper.chmod(0o755)
+        if short_deadline:
+            timeout_wrapper = bin_dir / "timeout"
+            timeout_wrapper.write_text(
+                "#!/usr/bin/env python3\nimport subprocess,sys\n"
+                "args=['1s' if arg == '175s' else arg for arg in sys.argv[1:]]\n"
+                f"sys.exit(subprocess.call([{shutil.which('timeout')!r}, *args]))\n")
+            timeout_wrapper.chmod(0o755)
         workflow = yaml.safe_load(WORKFLOW.read_text())
         step = next(
             s for s in workflow["jobs"]["monitor"]["steps"]
@@ -86,12 +94,19 @@ class StateCommitStepTests(unittest.TestCase):
             RUNNER_TEMP=str(tmp / "runner-temp"),
             GITHUB_TOKEN="fixture-token-do-not-print",
             SIMULATED_PUSH_FAILURE=failure or "",
+            PERSIST_TEST_SCENARIO=json.dumps(scenario or {}),
+            PERSIST_TEST_COUNTS=str(tmp / "counts.json"),
+            PERSIST_TEST_TRACE=str(tmp / "trace.jsonl"),
+            PERSIST_TEST_SLEEPS=str(tmp / "sleeps.txt"),
+            PERSIST_TEST_SEED=str(seed),
             GITHUB_RUN_ID="1234",
             GITHUB_RUN_ATTEMPT="2",
             GITHUB_SHA=self.initial_sha,
             GIT_CONFIG_NOSYSTEM="1",
             GIT_CONFIG_GLOBAL=os.devnull,
         )
+        if persist_budget is not None:
+            env["PERSIST_BUDGET_SECONDS"] = str(persist_budget)
         (tmp / "runner-temp").mkdir()
         outcomes = {"run_bot": bot_outcome, "snapshot_state": "skipped", "persist_state": "skipped"}
         def enabled(condition):
@@ -109,7 +124,7 @@ class StateCommitStepTests(unittest.TestCase):
         if enabled(step["if"]):
             result = subprocess.run(
                 ["bash", "-e", str(script)], cwd=runner, env=env,
-                text=True, capture_output=True, timeout=20,
+                text=True, capture_output=True, timeout=30,
             )
             outcomes["persist_state"] = "success" if result.returncode == 0 else "failure"
         else:
@@ -117,6 +132,11 @@ class StateCommitStepTests(unittest.TestCase):
         self.backup_step = next((s for s in workflow["jobs"]["monitor"]["steps"]
                                  if s.get("id") == "upload_state_recovery"), None)
         self.backup_selected = bool(self.backup_step and enabled(self.backup_step["if"]))
+        self.trace = [json.loads(line) for line in (tmp / "trace.jsonl").read_text().splitlines()] \
+            if (tmp / "trace.jsonl").exists() else []
+        self.pushes = [entry for entry in self.trace if entry["operation"] == "push"]
+        self.delays = [int(value) for value in (tmp / "sleeps.txt").read_text().splitlines()] \
+            if (tmp / "sleeps.txt").exists() else []
         persisted = json.loads(git("show", "master:monitor_state.json", cwd=remote))
         return result, persisted, tmp
 
@@ -194,6 +214,85 @@ class StateCommitStepTests(unittest.TestCase):
         self.assertTrue(self.backup_selected)
         self.assertTrue((self.recovery_dir / "artifact/manifest.json").is_file())
         self.assertEqual(persisted["entry"]["last_check"], "2026-01-02")
+
+    def test_permission_failure_stops_after_one_push_without_sleep(self):
+        result, _, _ = self.run_step("fatal: The requested URL returned error: 403")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(len(self.pushes), 1)
+        self.assertEqual(self.delays, [])
+
+    def test_unknown_failure_is_not_retried(self):
+        result, _, _ = self.run_step("remote: custom unrecognized hook failure")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(len(self.pushes), 1)
+        self.assertEqual(self.delays, [])
+
+    def test_server_failure_then_success_reuses_unaccepted_commit(self):
+        result, state, _ = self.run_step(scenario={"pushes": [
+            {"error": "remote: fatal error in commit_refs_rules"}, {}]})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.pushes), 2)
+        self.assertEqual(self.pushes[0]["local_sha"], self.pushes[1]["local_sha"])
+        self.assertEqual(len(self.delays), 1)
+        self.assertTrue(5 <= self.delays[0] <= 8)
+        self.assertEqual(state["entry"]["last_check"], "2026-01-02")
+
+    def test_non_fast_forward_fetches_remerges_and_preserves_concurrent_state(self):
+        result, state, _ = self.run_step(scenario={"pushes": [{"advance": True}, {}]})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.pushes), 2)
+        self.assertNotEqual(self.pushes[0]["local_sha"], self.pushes[1]["local_sha"])
+        self.assertEqual(state["entry"]["last_check"], "2026-01-02")
+        self.assertEqual(state["other"]["last_check"], "2026-01-03")
+        self.assertEqual(self.delays, [])
+
+    def test_accepted_push_with_timeout_is_confirmed_without_second_push(self):
+        result, state, _ = self.run_step(scenario={"pushes": [
+            {"accept": True, "error": "fatal: Connection timed out"}]})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.pushes), 1)
+        self.assertEqual(self.delays, [])
+        self.assertIn("confirmed", result.stdout.lower())
+        self.assertEqual(state["entry"]["last_check"], "2026-01-02")
+
+    def test_accepted_commit_is_confirmed_when_remote_has_a_descendant(self):
+        result, state, _ = self.run_step(scenario={"pushes": [
+            {"accept": True, "advance": True, "error": "fatal: Connection timed out"}]})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.pushes), 1)
+        self.assertEqual(state["other"]["last_check"], "2026-01-03")
+
+    def test_unverifiable_remote_never_allows_another_push(self):
+        result, _, _ = self.run_step(scenario={
+            "pushes": [{"error": "fatal: Connection timed out"}], "fetch_failure_from": 2})
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(len(self.pushes), 1)
+        self.assertTrue(self.backup_selected)
+
+    def test_five_transient_attempts_have_only_four_bounded_delays(self):
+        result, _, _ = self.run_step("remote: fatal error in commit_refs_rules")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(len(self.pushes), 5)
+        self.assertEqual(len(self.delays), 4)
+        for delay, base in zip(self.delays, (5, 10, 20, 40)):
+            self.assertTrue(base <= delay <= base + 3)
+
+    def test_command_timeout_respects_reduced_budget_and_keeps_recovery(self):
+        started = time.monotonic()
+        result, _, _ = self.run_step(scenario={"pushes": [{"delay": 5}]}, persist_budget=1)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertTrue(self.backup_selected)
+        self.assertEqual(self.delays, [])
+
+    def test_outer_deadline_includes_initial_helper_copy(self):
+        started = time.monotonic()
+        result, _, _ = self.run_step(slow_copy=True, short_deadline=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertEqual(self.pushes, [])
+        self.assertTrue(self.backup_selected)
+        self.assertTrue((self.recovery_dir / "artifact/manifest.json").exists())
 
 
 if __name__ == "__main__":
