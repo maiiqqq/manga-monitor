@@ -1,0 +1,505 @@
+{
+  "repository": "maiiqqq/manga-monitor",
+  "audit_base": "8b0310e52ec5295e02f61ae720ba705e7ba6e4ad",
+  "pr29": {
+    "merged": true,
+    "merge_commit": "8b0310e52ec5295e02f61ae720ba705e7ba6e4ad",
+    "merged_at": "2026-11-08T08:12:51Z"
+  },
+  "branch": {
+    "url": "https://api.github.com/repos/maiiqqq/manga-monitor/branches/master",
+    "protected": false
+  },
+  "rulesets": {
+    "url": "https://api.github.com/repos/maiiqqq/manga-monitor/rulesets?includes_parents=true",
+    "returned": []
+  },
+  "protection": {
+    "url": "https://api.github.com/repos/maiiqqq/manga-monitor/branches/master/protection",
+    "status": 403,
+    "reason": "Resource not accessible by integration",
+    "interpretation": "connector limitation; not evidence of a workflow-token denial"
+  },
+  "collection": {
+    "url": "https://api.github.com/repos/maiiqqq/manga-monitor/actions/runs?branch=master&per_page=100",
+    "total_count": 2500,
+    "returned": 100,
+    "from": "2026-11-08T01:03:38Z",
+    "to": "2026-11-08T08:11:03Z",
+    "conclusions": {
+      "in_progress": 1,
+      "success": 97,
+      "cancelled": 2
+    },
+    "event_counts": {
+      "workflow_dispatch": 98,
+      "schedule": 2
+    }
+  },
+  "failure_collection": {
+    "url": "https://api.github.com/repos/maiiqqq/manga-monitor/actions/runs?branch=master&status=failure&per_page=100",
+    "total_count": 17,
+    "returned": 17,
+    "newest_id": 42128663395,
+    "newest_created_at": "2026-11-05T23:18:51Z",
+    "scope": "returned accessible master branch runs; not a proof about all historical or future attempts"
+  },
+  "runs": [
+    {
+      "id": 42128663395,
+      "head_sha": "95adfb29a9e8a0d957221407f06c86bb1d6ce0e2",
+      "event": "workflow_dispatch",
+      "status_at_collection": "completed",
+      "conclusion_at_collection": "failure",
+      "created_at": "2026-11-05T23:18:51Z",
+      "jobs": [
+        {
+          "id": 127599340635,
+          "status": "completed",
+          "conclusion": "failure",
+          "started_at": "2026-11-05T23:18:56Z",
+          "completed_at": "2026-11-05T23:24:24Z",
+          "steps": [
+            {
+              "name": "Run Manga Bot (looped, near real-time)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-05T23:19:08Z",
+              "completed_at": "2026-11-05T23:23:29Z"
+            },
+            {
+              "name": "Commit state changes (if any)",
+              "status": "completed",
+              "conclusion": "failure",
+              "started_at": "2026-11-05T23:23:29Z",
+              "completed_at": "2026-11-05T23:24:20Z"
+            },
+            {
+              "name": "Keep the loop alive (self-chain next run)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-05T23:24:20Z",
+              "completed_at": "2026-11-05T23:24:22Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 42151756685,
+      "head_sha": "95adfb29a9e8a0d957221407f06c86bb1d6ce0e2",
+      "event": "schedule",
+      "status_at_collection": "completed",
+      "conclusion_at_collection": "success",
+      "created_at": "2026-11-06T02:39:56Z",
+      "jobs": [
+        {
+          "id": 127676407229,
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-06T02:39:58Z",
+          "completed_at": "2026-11-06T02:44:21Z",
+          "steps": [
+            {
+              "name": "Run Manga Bot (looped, near real-time)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-06T02:40:03Z",
+              "completed_at": "2026-11-06T02:44:16Z"
+            },
+            {
+              "name": "Commit state changes (if any)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-06T02:44:16Z",
+              "completed_at": "2026-11-06T02:44:17Z"
+            },
+            {
+              "name": "Keep the loop alive (self-chain next run)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-06T02:44:17Z",
+              "completed_at": "2026-11-06T02:44:19Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 42460892402,
+      "head_sha": "c18c36047784886fdf27a6da2afa438ec2f60bdd",
+      "event": "workflow_dispatch",
+      "status_at_collection": "completed",
+      "conclusion_at_collection": "success",
+      "created_at": "2026-11-08T07:57:49Z",
+      "jobs": [
+        {
+          "id": 128669756296,
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-08T07:57:55Z",
+          "completed_at": "2026-11-08T08:02:16Z",
+          "steps": [
+            {
+              "name": "Run Manga Bot (looped, near real-time)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-08T07:58:01Z",
+              "completed_at": "2026-11-08T08:02:11Z"
+            },
+            {
+              "name": "Commit state changes (if any)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-08T08:02:11Z",
+              "completed_at": "2026-11-08T08:02:11Z"
+            },
+            {
+              "name": "Keep the loop alive (self-chain next run)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-08T08:02:11Z",
+              "completed_at": "2026-11-08T08:02:13Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 42461511060,
+      "head_sha": "c18c36047784886fdf27a6da2afa438ec2f60bdd",
+      "event": "workflow_dispatch",
+      "status_at_collection": "completed",
+      "conclusion_at_collection": "success",
+      "created_at": "2026-11-08T08:06:37Z",
+      "jobs": [
+        {
+          "id": 128671603145,
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-08T08:06:42Z",
+          "completed_at": "2026-11-08T08:11:05Z",
+          "steps": [
+            {
+              "name": "Run Manga Bot (looped, near real-time)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-08T08:06:51Z",
+              "completed_at": "2026-11-08T08:11:01Z"
+            },
+            {
+              "name": "Commit state changes (if any)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-08T08:11:01Z",
+              "completed_at": "2026-11-08T08:11:02Z"
+            },
+            {
+              "name": "Keep the loop alive (self-chain next run)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-08T08:11:02Z",
+              "completed_at": "2026-11-08T08:11:03Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 42461825529,
+      "head_sha": "c18c36047784886fdf27a6da2afa438ec2f60bdd",
+      "event": "workflow_dispatch",
+      "status_at_collection": "in_progress",
+      "conclusion_at_collection": null,
+      "created_at": "2026-11-08T08:11:03Z",
+      "jobs": [
+        {
+          "id": 128672566969,
+          "status": "completed",
+          "conclusion": "success",
+          "started_at": "2026-11-08T08:11:08Z",
+          "completed_at": "2026-11-08T08:15:34Z",
+          "steps": [
+            {
+              "name": "Run Manga Bot (looped, near real-time)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-08T08:11:15Z",
+              "completed_at": "2026-11-08T08:15:28Z"
+            },
+            {
+              "name": "Commit state changes (if any)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-08T08:15:28Z",
+              "completed_at": "2026-11-08T08:15:29Z"
+            },
+            {
+              "name": "Keep the loop alive (self-chain next run)",
+              "status": "completed",
+              "conclusion": "success",
+              "started_at": "2026-11-08T08:15:29Z",
+              "completed_at": "2026-11-08T08:15:31Z"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": 42461016515,
+      "head_sha": "c18c36047784886fdf27a6da2afa438ec2f60bdd",
+      "event": "schedule",
+      "status_at_collection": "completed",
+      "conclusion_at_collection": "cancelled",
+      "created_at": "2026-11-08T07:59:51Z",
+      "jobs": []
+    },
+    {
+      "id": 42267403160,
+      "head_sha": "61fd4cd6d02d02329c8296a70b25c08e998bba4a",
+      "event": "workflow_dispatch",
+      "status_at_collection": "queued",
+      "conclusion_at_collection": null,
+      "created_at": "2026-11-06T18:04:45Z",
+      "jobs": []
+    }
+  ],
+  "log_evidence": [
+    {
+      "job_id": 127599340635,
+      "signals": [
+        {
+          "at": "2026-11-05T23:18:56.9651239Z",
+          "signal": "Contents: write"
+        },
+        {
+          "at": "2026-11-05T23:18:56.9652331Z",
+          "signal": "Metadata: read"
+        },
+        {
+          "at": "2026-11-05T23:23:30.4688843Z",
+          "signal": "remote: fatal error in commit_refs_rules"
+        },
+        {
+          "at": "2026-11-05T23:23:30.4702190Z",
+          "signal": "2026-11-05T23:23:30.4702190Z error: failed to push some refs"
+        },
+        {
+          "at": "2026-11-05T23:23:34.6653103Z",
+          "signal": "remote: fatal error in commit_refs_rules"
+        },
+        {
+          "at": "2026-11-05T23:23:34.6662348Z",
+          "signal": "2026-11-05T23:23:34.6662348Z error: failed to push some refs"
+        },
+        {
+          "at": "2026-11-05T23:23:41.9148649Z",
+          "signal": "remote: fatal error in commit_refs_rules"
+        },
+        {
+          "at": "2026-11-05T23:23:41.9154944Z",
+          "signal": "2026-11-05T23:23:41.9154944Z error: failed to push some refs"
+        },
+        {
+          "at": "2026-11-05T23:23:52.2642050Z",
+          "signal": "remote: fatal error in commit_refs_rules"
+        },
+        {
+          "at": "2026-11-05T23:23:52.2651164Z",
+          "signal": "2026-11-05T23:23:52.2651164Z error: failed to push some refs"
+        },
+        {
+          "at": "2026-11-05T23:24:05.4661551Z",
+          "signal": "remote: fatal error in commit_refs_rules"
+        },
+        {
+          "at": "2026-11-05T23:24:05.4688154Z",
+          "signal": "2026-11-05T23:24:05.4688154Z error: failed to push some refs"
+        },
+        {
+          "at": "2026-11-05T23:24:20.4726168Z",
+          "signal": "Failed to push after 5 attempts"
+        },
+        {
+          "at": "2026-11-05T23:24:22.2923330Z",
+          "signal": "HTTP 500"
+        }
+      ]
+    },
+    {
+      "job_id": 127676407229,
+      "signals": [
+        {
+          "at": "2026-11-06T02:39:59.5144811Z",
+          "signal": "Contents: write"
+        },
+        {
+          "at": "2026-11-06T02:39:59.5145326Z",
+          "signal": "Metadata: read"
+        },
+        {
+          "at": "2026-11-06T02:44:17.6252809Z",
+          "signal": "2026-11-06T02:44:17.6252809Z    95adfb2..9c83806  HEAD -> master"
+        },
+        {
+          "at": "2026-11-06T02:44:17.6296241Z",
+          "signal": "Push succeeded on attempt 1"
+        },
+        {
+          "at": "2026-11-06T02:44:19.3001716Z",
+          "signal": "HTTP 204"
+        }
+      ]
+    },
+    {
+      "job_id": 128671603145,
+      "signals": [
+        {
+          "at": "2026-11-08T08:06:43.0431844Z",
+          "signal": "Contents: write"
+        },
+        {
+          "at": "2026-11-08T08:06:43.0432596Z",
+          "signal": "Metadata: read"
+        },
+        {
+          "at": "2026-11-08T08:11:02.1812170Z",
+          "signal": "No state changes to commit"
+        },
+        {
+          "at": "2026-11-08T08:11:03.6186387Z",
+          "signal": "Self-chain: state=accepted reason=http_204"
+        }
+      ]
+    },
+    {
+      "job_id": 128672566969,
+      "signals": [
+        {
+          "at": "2026-11-08T08:11:09.5157466Z",
+          "signal": "Contents: write"
+        },
+        {
+          "at": "2026-11-08T08:11:09.5158065Z",
+          "signal": "Metadata: read"
+        },
+        {
+          "at": "2026-11-08T08:15:29.4616165Z",
+          "signal": "No state changes to commit"
+        },
+        {
+          "at": "2026-11-08T08:15:31.0568700Z",
+          "signal": "Self-chain: state=accepted reason=http_204"
+        }
+      ]
+    },
+    {
+      "job_id": 128673560980,
+      "signals": [
+        {
+          "at": "2026-11-08T08:15:37.4566202Z",
+          "signal": "Contents: write"
+        },
+        {
+          "at": "2026-11-08T08:15:37.4566759Z",
+          "signal": "Metadata: read"
+        },
+        {
+          "at": "2026-11-08T08:19:58.7039822Z",
+          "signal": "[INFO] no new chapters this cycle"
+        },
+        {
+          "at": "2026-11-08T08:19:58.7043359Z",
+          "signal": "[INFO] no new chapters this cycle"
+        },
+        {
+          "at": "2026-11-08T08:19:58.7046664Z",
+          "signal": "[INFO] no new chapters this cycle"
+        },
+        {
+          "at": "2026-11-08T08:19:58.7049853Z",
+          "signal": "[INFO] no new chapters this cycle"
+        },
+        {
+          "at": "2026-11-08T08:19:58.7052105Z",
+          "signal": "[INFO] no new chapters this cycle"
+        },
+        {
+          "at": "2026-11-08T08:19:58.7054181Z",
+          "signal": "[INFO] no new chapters this cycle"
+        },
+        {
+          "at": "2026-11-08T08:19:58.7056181Z",
+          "signal": "[INFO] no new chapters this cycle"
+        },
+        {
+          "at": "2026-11-08T08:19:58.7058022Z",
+          "signal": "[INFO] no new chapters this cycle"
+        },
+        {
+          "at": "2026-11-08T08:19:58.7059767Z",
+          "signal": "[INFO] no new chapters this cycle"
+        },
+        {
+          "at": "2026-11-08T08:19:59.1885270Z",
+          "signal": "No state changes to commit"
+        },
+        {
+          "at": "2026-11-08T08:20:00.8937818Z",
+          "signal": "Self-chain: state=accepted reason=http_204"
+        }
+      ]
+    }
+  ],
+  "limits": [
+    "Detailed branch protection unavailable through integration",
+    "Nov1 job124925959557 log download404 BlobNotFound; cannot classify its cause",
+    "Some workflow/concurrency collection URLs rejected as unsupported by connector; not GitHub permission failures",
+    "Queued run has no allocated job in returned jobs response; no observed active writer, reason for old queue unknown",
+    "Run creation/updated intervals are not bot/state-write intervals",
+    "No manual dispatch/rerun/cancel, Telegram send, protection/PAT/permission/concurrency changes performed",
+    "workflow_dispatch alone does not reveal manual versus self-chain inputs; earlier plain-title runs cannot be classified from event alone"
+  ],
+  "observations_date_utc": "2026-11-08",
+  "post_gm007": {
+    "run_id": 42462149624,
+    "head_sha": "8b0310e52ec5295e02f61ae720ba705e7ba6e4ad",
+    "jobs": [
+      {
+        "id": 128673560980,
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-11-08T08:15:36Z",
+        "completed_at": "2026-11-08T08:20:02Z",
+        "steps": [
+          {
+            "name": "Run Manga Bot (looped, near real-time)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-08T08:15:42Z",
+            "completed_at": "2026-11-08T08:19:58Z"
+          },
+          {
+            "name": "Commit state changes (if any)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-08T08:19:58Z",
+            "completed_at": "2026-11-08T08:19:59Z"
+          },
+          {
+            "name": "Keep the loop alive (self-chain next run)",
+            "status": "completed",
+            "conclusion": "success",
+            "started_at": "2026-11-08T08:19:59Z",
+            "completed_at": "2026-11-08T08:20:00Z"
+          }
+        ]
+      }
+    ],
+    "log_check": {
+      "matched_delivery_holds": 0,
+      "matched_new_update_lines": 0,
+      "scope": "matched current log markers, not a proof that all delivery paths executed"
+    }
+  }
+}
