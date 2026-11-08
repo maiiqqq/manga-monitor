@@ -122,6 +122,13 @@ journalctl -u manga-bot -f
 
 ---
 
+## กู้คืน state และประเมิน replay
+
+ดู [คู่มือ recovery/replay (GM-005)](docs/recovery-replay.md) ก่อนกู้คืน state
+หรือส่งรายการย้อนหลัง คู่มือแยกหลักฐานการส่งออกจาก baseline และระบุข้อจำกัด
+ของ `BACKFILL_DRYRUN`, `CHECK_URLS` และ self-chain ที่ต้องแก้ก่อน replay จริง
+อย่าเปิด VM และ Actions ให้ส่งพร้อมกันระหว่างกู้คืน
+
 ## อัปเดตโค้ดในอนาคต
 ```bash
 cd ~/manga-monitor && git pull && sudo systemctl restart manga-bot
@@ -133,3 +140,4 @@ sudo systemctl restart manga-bot    # รีสตาร์ท
 sudo systemctl stop manga-bot       # หยุด
 journalctl -u manga-bot -n 50       # ดู log ล่าสุด 50 บรรทัด
 ```
+
