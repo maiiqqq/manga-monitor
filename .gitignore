@@ -16,6 +16,8 @@ env/
 # monitor_state.json is intentionally tracked (committed by CI each run)
 monitor.log
 *.log
+delivery_state.json.lock
+.delivery-*
 
 # Debug files
 debug_page.html

@@ -85,9 +85,9 @@ def _scrape_and_notify(scraper, state, bookmarks, notifier, pages=None):
     updates = scraper.check_updates(state, pages=pages)
     if not updates:
         print("[INFO] no new chapters this cycle")
+        notifier.flush_favorites_summary()
         return
     print(f"[INFO] {len(updates)} manga with updates")
-    sent = []
     for upd in updates:
         upd["is_bookmarked"] = bookmarks.is_bookmarked(upd["manga"].url)
         # Advance the baseline only after a successful send so an interrupted
@@ -96,14 +96,40 @@ def _scrape_and_notify(scraper, state, bookmarks, notifier, pages=None):
         if notifier.send_update(upd):
             if upd.get("_commit"):
                 state.update_manga(*upd["_commit"])
-            sent.append(upd)
         time.sleep(0.5)
-    favs = [u for u in sent if u.get("is_bookmarked")]
-    if favs:
-        notifier.send_favorites_summary(favs)
+    notifier.flush_favorites_summary()
+
+
+def _preview():
+    """Scrape with an in-memory baseline; no notifier, commands or state writes."""
+    class PreviewState(gm.StateManager):
+        def save(self):
+            pass
+
+    state = PreviewState(gm.STATE_FILE)
+    scraper = gm.GoMangaScraper()
+    check_urls = os.environ.get("CHECK_URLS", "").strip()
+    if check_urls:
+        for url in filter(None, (u.strip() for u in check_urls.split(","))):
+            manga = scraper.scrape_manga_detail(url)
+            if manga:
+                print(f"[PREVIEW] {manga.title}: baseline={state.get_last_chapter(url)} "
+                      f"site={manga.latest_chapter}; not sending")
+        return
+    if os.environ.get("BACKFILL_TODAY", "").strip().lower() in ("1", "true", "yes"):
+        updates = scraper.collect_updates_for_date(os.environ.get("BACKFILL_DATE", "").strip())
+    else:
+        updates = scraper.check_updates(state)
+    for update in updates:
+        chapters = ", ".join(c.number for c in update["new_chapters"])
+        print(f"[PREVIEW] {update['manga'].title}: chapters={chapters}; not sending")
+    print(f"[PREVIEW] {len(updates)} candidate(s); runtime state unchanged")
 
 
 def main():
+    if os.environ.get("BACKFILL_DRYRUN", "").strip().lower() in ("1", "true", "yes"):
+        _preview()
+        return
     if not (gm.TELEGRAM_BOT_TOKEN and gm.TELEGRAM_CHAT_ID):
         print("[FATAL] set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID env vars", file=sys.stderr)
         sys.exit(1)
@@ -160,12 +186,15 @@ def main():
                 prev = str(base_num) if (base_num is not None and site_num > base_num) else str(site_num - 1)
                 upd = {"manga": manga, "new_chapters": new_ch, "previous_chapter": prev}
                 upd["is_bookmarked"] = bookmarks.is_bookmarked(url)
-                notifier.send_update(upd)
-                newest_date = max((c.date for c in visible if c.date), default="")
-                state.update_manga(url, newest.number, newest_date, manga.title)
-                print(f"[CHECK] -> {reason}: notified {len(new_ch)} ตอน, baseline set to {newest.number}")
+                if notifier.send_update(upd):
+                    newest_date = max((c.date for c in visible if c.date), default="")
+                    state.update_manga(url, newest.number, newest_date, manga.title)
+                    print(f"[CHECK] -> {reason}: notified {len(new_ch)} ตอน, baseline set to {newest.number}")
+                else:
+                    print("[CHECK] -> delivery not confirmed; baseline unchanged")
             time.sleep(gm.REQUEST_DELAY)
         print("[CHECK] done")
+        notifier.flush_favorites_summary()
         return
 
     # One-off backfill: resend every manga that dropped a chapter today, then
@@ -173,24 +202,17 @@ def main():
     # state, so it never affects the normal detection loop.
     if os.environ.get("BACKFILL_TODAY", "").strip().lower() in ("1", "true", "yes"):
         target = os.environ.get("BACKFILL_DATE", "").strip()
-        dryrun = os.environ.get("BACKFILL_DRYRUN", "").strip().lower() in ("1", "true", "yes")
         day = target or gm.site_today()
         ups = scraper.collect_updates_for_date(target)
-        print(f"[BACKFILL] {len(ups)} manga updated on {day}"
-              + (" (DRY-RUN, not sending)" if dryrun else ""))
+        print(f"[BACKFILL] {len(ups)} manga updated on {day}")
         for u in ups:
             m = u["manga"]
             chs = ", ".join(c.number for c in u["new_chapters"])
             print(f"[BACKFILL-LIST] {m.title} — ตอนที่ {chs}")
-            if dryrun:
-                continue
             u["is_bookmarked"] = bookmarks.is_bookmarked(m.url)
             notifier.send_update(u)
             time.sleep(0.5)
-        if not dryrun:
-            favs = [u for u in ups if u.get("is_bookmarked")]
-            if favs:
-                notifier.send_favorites_summary(favs)
+        notifier.flush_favorites_summary()
         print("[BACKFILL] done")
         return
 

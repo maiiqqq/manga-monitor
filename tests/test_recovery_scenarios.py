@@ -1,8 +1,8 @@
-"""GM-005: characterize recovery risks; these tests do not fix delivery semantics.
+"""GM-005 recovery cases evolved into GM-007 delivery/preview regressions.
 
 Real scraper comparison, notifier and state code run against synthetic pages and
 mock HTTP responses. Git push rejection uses only temporary local repositories.
-Known unsafe behavior is asserted deliberately so the runbook stays accurate.
+Remaining merge limitations are asserted deliberately for the recovery runbook.
 """
 from contextlib import ExitStack, redirect_stderr, redirect_stdout
 import importlib.util
@@ -17,6 +17,7 @@ import unittest
 from unittest import mock
 
 import requests
+from tests.test_delivery_ledger import ContentsAPI
 
 # Do not load operator configuration when importing production modules.
 with mock.patch("dotenv.load_dotenv"):
@@ -34,8 +35,9 @@ def baseline(chapter):
 
 
 class Response:
-    def __init__(self, payload):
+    def __init__(self, payload, status=200):
         self.payload = payload
+        self.status_code = status
 
     def raise_for_status(self):
         pass
@@ -60,6 +62,7 @@ class RecoveryScenarios(unittest.TestCase):
         self.stack.enter_context(mock.patch.dict(os.environ, {
             "CHECK_URLS": "", "BACKFILL_TODAY": "", "BACKFILL_DATE": "",
             "BACKFILL_DRYRUN": "", "CHAIN_PAT": "", "WORKFLOW_PAT": "",
+            "GITHUB_ACTIONS": "", "GITHUB_TOKEN": "",
         }))
         self.path = self.tmp / "monitor_state.json"
         self.path.write_text(json.dumps({URL: baseline(10)}))
@@ -70,9 +73,10 @@ class RecoveryScenarios(unittest.TestCase):
         for key, value in {
             "STATE_FILE": self.path, "BOOKMARKS_FILE": self.bookmarks,
             "BOT_STATE_FILE": self.bot_state, "REQUEST_DELAY": 0,
+            "DELIVERY_FILE": self.tmp / "delivery_state.json",
             "TELEGRAM_BOT_TOKEN": "fixture-token", "TELEGRAM_CHAT_ID": "fixture-chat",
         }.items():
-            self.stack.enter_context(mock.patch.object(gm, key, value))
+            self.stack.enter_context(mock.patch.object(gm, key, value, create=True))
         self.stack.enter_context(mock.patch.object(gm, "site_today", return_value=DAY))
         self.stack.enter_context(mock.patch.object(rt.time, "sleep"))
         chapter = gm.Chapter("11", "Chapter 11", URL + "11/", DAY)
@@ -96,12 +100,20 @@ class RecoveryScenarios(unittest.TestCase):
         if endpoint == "setMyCommands":
             return Response({"ok": True, "result": True})
         self.assertIn(endpoint, ("sendMessage", "sendPhoto"))
+        if endpoint == "sendMessage" and len(kwargs["json"]["text"]) > 4096:
+            return Response({"ok": False, "error_code": 400, "description": "message too long"})
         action = self.actions.pop(0) if self.actions else "accepted"
         if action == "rejected":
             return Response({"ok": False, "error_code": 400, "description": "fixture rejection"})
+        if action == "server_error":
+            return Response({"ok": False, "error_code": 500, "description": "fixture server failure"}, 500)
+        if action == "redirect":
+            return Response({"ok": False, "error_code": 400, "description": "fixture redirect"}, 302)
         self.delivered.append((endpoint, kwargs["json"]))
         if action == "accepted_timeout":
             raise requests.Timeout("fixture acknowledgement lost after acceptance")
+        if action == "malformed":
+            return Response({"ok": True, "result": {}})
         return Response({"ok": True, "result": {"message_id": len(self.delivered)}})
 
     def get(self, url, **kwargs):
@@ -141,69 +153,88 @@ class RecoveryScenarios(unittest.TestCase):
         self.cycle()
         self.assertEqual(self.chapter_on_disk(), "11")
 
-    def test_accepted_send_with_lost_ack_resends_after_restart(self):
+    def test_accepted_send_with_lost_ack_is_held_after_restart(self):
         self.actions = ["accepted_timeout"]
         self.cycle()
         self.assertEqual(self.chapter_on_disk(), "10")
         self.cycle()
-        self.assertEqual(len(self.delivered), 2)
+        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.chapter_on_disk(), "10")
 
-    def test_send_then_failed_state_save_resends_after_restart(self):
+    def test_send_then_failed_state_save_reuses_receipt_after_restart(self):
         with mock.patch.object(gm.StateManager, "save", side_effect=OSError("fixture disk full")):
             with self.assertRaises(OSError):
                 self.cycle()
         self.assertEqual(self.chapter_on_disk(), "10")
         self.cycle()
-        self.assertEqual(len(self.delivered), 2)
+        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.chapter_on_disk(), "11")
 
-    def test_accepted_photo_with_lost_ack_falls_back_to_duplicate_text(self):
+    def test_accepted_photo_with_lost_ack_is_held_without_text_fallback(self):
         self.manga.cover_image = "https://example.invalid/cover.jpg"
         self.actions = ["accepted_timeout", "accepted"]
         self.cycle()
-        self.assertEqual([item[0] for item in self.delivered], ["sendPhoto", "sendMessage"])
-        self.assertEqual(self.chapter_on_disk(), "11")
+        self.cycle()
+        self.assertEqual([item[0] for item in self.delivered], ["sendPhoto"])
+        self.assertEqual(self.chapter_on_disk(), "10")
 
-    def test_sent_card_but_rejected_favorites_summary_is_not_retried(self):
+    def test_rejected_favorites_summary_retries_without_resending_card(self):
         self.bookmarks.write_text(json.dumps({URL: {"title": self.manga.title}}))
         self.actions = ["accepted", "rejected"]
         self.cycle()
         self.cycle()
-        self.assertEqual(self.calls, ["sendMessage", "sendMessage"])
-        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.calls, ["sendMessage", "sendMessage", "sendMessage"])
+        self.assertEqual(len(self.delivered), 2)
         self.assertEqual(self.chapter_on_disk(), "11")
 
-    def test_targeted_rejection_still_advances_baseline_known_gap(self):
+    def test_targeted_rejection_keeps_baseline_for_retry(self):
         self.actions = ["rejected"]
         self.run_main(CHECK_URLS=URL)
         self.assertEqual(self.delivered, [])
-        self.assertEqual(self.chapter_on_disk(), "11")
-        self.assertIn("notified", self.out.getvalue())
+        self.assertEqual(self.chapter_on_disk(), "10")
+        self.assertNotIn("notified", self.out.getvalue())
 
-    def test_backfill_dryrun_skips_messages_but_calls_startup_apis(self):
+    def test_backfill_preview_has_no_telegram_calls_or_state_writes(self):
         original = self.path.read_bytes()
         update = {"manga": self.manga, "new_chapters": self.manga.chapters}
         with mock.patch.object(self.scraper, "collect_updates_for_date", return_value=[update]):
             self.run_main(BACKFILL_TODAY="true", BACKFILL_DRYRUN="true", BACKFILL_DATE=DAY)
-        self.assertEqual(self.calls, ["setMyCommands", "getChat"])
+        self.assertEqual(self.calls, [])
         self.assertEqual(self.delivered, [])
         self.assertEqual(self.path.read_bytes(), original)
 
-    def test_dryrun_flag_alone_does_not_stop_normal_delivery(self):
+    def test_preview_flag_alone_stops_normal_delivery(self):
         self.run_main(BACKFILL_DRYRUN="true")
-        self.assertEqual(len(self.delivered), 1)
-        self.assertEqual(self.chapter_on_disk(), "11")
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.chapter_on_disk(), "10")
 
-    def test_targeted_mode_takes_precedence_over_backfill_dryrun(self):
+    def test_targeted_preview_has_no_telegram_calls(self):
         self.run_main(CHECK_URLS=URL, BACKFILL_TODAY="true", BACKFILL_DRYRUN="true")
-        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.chapter_on_disk(), "10")
 
-    def test_repeated_backfill_resends_without_changing_baseline(self):
+    def test_preview_needs_no_credentials_and_preserves_all_runtime_bytes(self):
+        before = {p: p.read_bytes() for p in (self.path, self.bookmarks, self.bot_state)}
+        with mock.patch.object(gm, "TELEGRAM_BOT_TOKEN", ""), mock.patch.object(gm, "TELEGRAM_CHAT_ID", ""):
+            self.run_main(BACKFILL_DRYRUN="true")
+        self.assertEqual(self.calls, [])
+        self.assertEqual({p: p.read_bytes() for p in before}, before)
+
+    def test_one_shot_entrypoint_respects_preview(self):
+        before = {p: p.read_bytes() for p in (self.path, self.bookmarks, self.bot_state)}
+        with mock.patch.dict(os.environ, {"BACKFILL_DRYRUN": "true"}), \
+                mock.patch.object(gm, "GoMangaScraper", return_value=self.scraper):
+            gm.main()
+        self.assertEqual(self.calls, [])
+        self.assertEqual({p: p.read_bytes() for p in before}, before)
+
+    def test_repeated_backfill_does_not_resend_accepted_events(self):
         original = self.path.read_bytes()
         update = {"manga": self.manga, "new_chapters": self.manga.chapters}
         with mock.patch.object(self.scraper, "collect_updates_for_date", return_value=[update]):
             for _ in range(2):
                 self.run_main(BACKFILL_TODAY="true", BACKFILL_DATE=DAY)
-        self.assertEqual(len(self.delivered), 2)
+        self.assertEqual(len(self.delivered), 1)
         self.assertEqual(self.path.read_bytes(), original)
 
     def test_scrape_error_is_logged_but_main_returns_normally(self):
@@ -212,7 +243,11 @@ class RecoveryScenarios(unittest.TestCase):
         self.assertIn("[ERROR] scrape cycle", self.err.getvalue())
         self.assertEqual(self.delivered, [])
 
-    def test_push_rejected_after_send_leaves_remote_old_and_next_runner_resends(self):
+    def test_push_rejected_after_send_uses_remote_receipt_on_next_runner(self):
+        from delivery_ledger import GitHubStore
+        api = ContentsAPI()
+        self.stack.enter_context(mock.patch.object(gm, "make_store",
+            side_effect=lambda _: GitHubStore("fixture/repo", "fixture-token", client=api), create=True))
         def git(*args, cwd, check=True):
             return subprocess.run(["git", *args], cwd=cwd, text=True, capture_output=True, check=check)
 
@@ -243,7 +278,96 @@ class RecoveryScenarios(unittest.TestCase):
         next_state = next_runner / "monitor_state.json"
         self.assertEqual(self.chapter_on_disk(next_state), "10")
         self.cycle(next_state)
+        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.chapter_on_disk(next_state), "11")
+
+    def test_rejected_photo_can_fall_back_to_one_accepted_text(self):
+        self.manga.cover_image = "https://example.invalid/cover.jpg"
+        self.actions = ["rejected", "accepted"]
+        self.cycle()
+        self.cycle()
+        self.assertEqual(self.calls, ["sendPhoto", "sendMessage"])
+        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.chapter_on_disk(), "11")
+
+    def test_malformed_accepted_response_is_held(self):
+        self.actions = ["malformed"]
+        self.cycle()
+        self.cycle()
+        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.chapter_on_disk(), "10")
+
+    def test_server_error_is_held_without_automatic_retry(self):
+        self.actions = ["server_error"]
+        self.cycle()
+        self.cycle()
+        self.assertEqual(self.calls, ["sendMessage"])
+        self.assertEqual(self.chapter_on_disk(), "10")
+
+    def test_redirect_is_unknown_and_never_triggers_photo_fallback(self):
+        self.manga.cover_image = "https://example.invalid/cover.jpg"
+        self.actions = ["redirect", "accepted"]
+        self.cycle()
+        self.cycle()
+        self.assertEqual(self.calls, ["sendPhoto"])
+        self.assertEqual(self.delivered, [])
+        self.assertEqual(self.chapter_on_disk(), "10")
+
+    def test_one_shot_retries_pending_summary_without_new_cards(self):
+        self.bookmarks.write_text(json.dumps({URL: {"title": self.manga.title}}))
+        self.actions = ["accepted", "rejected"]
+        self.cycle()
+        with mock.patch.object(gm, "GoMangaScraper", return_value=self.scraper), \
+                mock.patch.object(gm, "process_telegram_commands", return_value=0):
+            gm.main()
         self.assertEqual(len(self.delivered), 2)
+
+    def test_empty_backfill_retries_queued_summary(self):
+        self.bookmarks.write_text(json.dumps({URL: {"title": self.manga.title}}))
+        self.actions = ["accepted", "rejected"]
+        self.cycle()
+        with mock.patch.object(self.scraper, "collect_updates_for_date", return_value=[]):
+            self.run_main(BACKFILL_TODAY="true")
+        self.assertEqual(len(self.delivered), 2)
+
+    def test_large_favorite_backlog_drains_in_telegram_sized_batches(self):
+        notifier = gm.TelegramNotifier("fixture-token", "fixture-chat")
+        for n in range(12):
+            manga = gm.Manga.from_dict(self.manga.to_dict())
+            manga.url = URL + str(n) + "/"
+            manga.title = str(n) + "x" * 400
+            self.assertTrue(notifier.send_update({"manga": manga, "new_chapters": manga.chapters,
+                                                  "is_bookmarked": True}))
+        for _ in range(12):
+            self.assertTrue(notifier.flush_favorites_summary())
+        self.assertEqual(notifier.delivery_ledger().pending_favorites(), [])
+        self.assertTrue(all(len(payload.get("text", "")) <= 4096 for _, payload in self.delivered))
+
+    def test_summary_lost_ack_is_not_retried_after_card_baseline_advance(self):
+        self.bookmarks.write_text(json.dumps({URL: {"title": self.manga.title}}))
+        self.actions = ["accepted", "accepted_timeout"]
+        self.cycle()
+        self.cycle()
+        self.assertEqual(len(self.delivered), 2)
+        self.assertEqual(self.calls, ["sendMessage", "sendMessage"])
+
+    def test_failed_remote_intent_write_prevents_telegram(self):
+        from delivery_ledger import GitHubStore
+        api = ContentsAPI()
+        api.put_status = 403
+        self.stack.enter_context(mock.patch.object(gm, "make_store",
+            side_effect=lambda _: GitHubStore("fixture/repo", "fixture-token", client=api), create=True))
+        self.cycle()
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.chapter_on_disk(), "10")
+
+    def test_new_chapter_is_not_blocked_by_accepted_previous_chapter(self):
+        self.cycle()
+        self.manga.chapters.insert(0, gm.Chapter("12", "Chapter 12", URL + "12/", DAY))
+        self.scraper.scrape_list_page.return_value[0]["latest_chapter"] = "12"
+        self.cycle()
+        self.assertEqual(len(self.delivered), 2)
+        self.assertEqual(self.chapter_on_disk(), "12")
 
     def test_recovery_merge_preserves_newer_remote_chapter_entries_and_offset(self):
         for filename, base, ours, theirs, expected in [
@@ -270,7 +394,7 @@ class RecoveryScenarios(unittest.TestCase):
                        check=True, capture_output=True, text=True)
         self.assertEqual(self.chapter_on_disk(target), "11")
 
-    def test_dryrun_does_not_disable_self_chain_or_propagate_to_child(self):
+    def test_preview_disables_self_chain_even_with_pat(self):
         spec = importlib.util.spec_from_file_location("gm005_chain", ROOT / ".github/scripts/dispatch_next_run.py")
         chain = importlib.util.module_from_spec(spec)
         with mock.patch.dict(sys.modules, {spec.name: chain}):
@@ -281,11 +405,9 @@ class RecoveryScenarios(unittest.TestCase):
             "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "1",
             "BACKFILL_TODAY": "true", "BACKFILL_DRYRUN": "true",
         }, request=request, sleep=mock.Mock())
-        self.assertEqual(result.state, "accepted")
-        request.assert_called_once()
-        self.assertEqual(request.call_args.args[0], "POST")
-        self.assertEqual(request.call_args.args[3], {
-            "ref": "master", "inputs": {"chained": "yes", "chain_request_id": "1-1"}})
+        self.assertEqual(result.state, "disabled")
+        self.assertEqual(result.reason, "preview_requested")
+        request.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -51,6 +51,12 @@ when credential screening permits it. No repair is performed automatically.
 
 ## Offline verification
 
+After GM-007, delivery evidence lives separately in `delivery_state.json`:
+Actions commits intent to the remote ledger before sending. The recovery
+artifact still exports only the original three state files. Inspect the latest
+remote ledger and its commit history as well; do not restore a stale checkout
+ledger over it. See [delivery safety](delivery-safety.md).
+
 Install test dependencies with `python3 -m pip install -r requirements-dev.txt`,
 then run `python3 -m unittest discover -v`. Tests use temporary local Git
 repositories and synthetic state; they do not send Telegram messages, dispatch
