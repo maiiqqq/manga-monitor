@@ -43,7 +43,8 @@ artifact. Runner-only originals disappear when the hosted runner is discarded.
 3. Verify each included file against its recorded SHA-256 before using it.
 4. Compare the snapshot with the latest remote state and notification history.
    Do not overwrite newer state or rerun notification delivery automatically.
-   GM-005 covers the full recovery/replay procedure.
+   Follow the [recovery/replay runbook](recovery-replay.md) (GM-005), including
+   its delivery-evidence and dry-run limitations, before proposing any recovery.
 
 For malformed JSON, the artifact may include the exact invalid bytes for diagnosis
 when credential screening permits it. No repair is performed automatically.
