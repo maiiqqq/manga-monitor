@@ -20,6 +20,7 @@ from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from delivery_ledger import DeliveryLedger, LedgerUnavailable, SendResult, make_store, target_scope
 
 # Load .env file
 load_dotenv()
@@ -33,6 +34,7 @@ LIST_URL = f"{BASE_URL}/manga/?order=update"
 STATE_FILE = Path(__file__).parent / "monitor_state.json"
 BOOKMARKS_FILE = Path(__file__).parent / "bookmarks.json"
 BOT_STATE_FILE = Path(__file__).parent / "bot_state.json"
+DELIVERY_FILE = Path(__file__).parent / "delivery_state.json"
 REQUEST_TIMEOUT = 30
 REQUEST_DELAY = 1.0  # Be polite to the server
 
@@ -736,6 +738,36 @@ class TelegramNotifier:
         self.bot_token = bot_token
         self.chat_id = chat_id
         self.api_url = f"https://api.telegram.org/bot{bot_token}"
+        self._ledger = None
+        self.last_result = SendResult("unknown", "sendMessage")
+
+    def delivery_ledger(self):
+        if self._ledger is None:
+            self._ledger = DeliveryLedger(make_store(DELIVERY_FILE), target_scope(self.bot_token, self.chat_id))
+        return self._ledger
+
+    def _post_result(self, method, payload, timeout):
+        if os.environ.get("BACKFILL_DRYRUN", "").strip().lower() in ("1", "true", "yes"):
+            return SendResult("rejected", method)
+        try:
+            response = requests.post(f"{self.api_url}/{method}", json=payload,
+                                     timeout=timeout, allow_redirects=False)
+            status = getattr(response, "status_code", 200)
+            body = response.json()
+            if isinstance(body, dict):
+                result = body.get("result")
+                message_id = result.get("message_id") if isinstance(result, dict) else None
+                if status == 200 and body.get("ok") is True and type(message_id) is int and message_id > 0:
+                    return SendResult("accepted", method, message_id)
+                code = body.get("error_code")
+                if ((status == 200 or 400 <= status < 500) and body.get("ok") is False
+                        and type(code) is int and 400 <= code < 500):
+                    return SendResult("rejected", method)
+        except Exception:
+            pass
+        # No exception text or response body: either may contain credentials.
+        print(f"[ERROR] Telegram {method}: delivery outcome unknown", file=sys.stderr)
+        return SendResult("unknown", method)
 
     @staticmethod
     def bookmark_keyboard(manga_url: str, is_bookmarked: bool) -> dict:
@@ -752,9 +784,9 @@ class TelegramNotifier:
         target = chat_id or self.chat_id
         if not self.bot_token or not target:
             print("[WARN] Telegram not configured, skipping notification")
+            self.last_result = SendResult("rejected", "sendMessage")
             return False
 
-        url = f"{self.api_url}/sendMessage"
         payload = {
             "chat_id": target,
             "text": text,
@@ -764,22 +796,8 @@ class TelegramNotifier:
         if reply_markup:
             payload["reply_markup"] = reply_markup
 
-        try:
-            resp = requests.post(url, json=payload, timeout=10)
-            resp.raise_for_status()
-            # Telegram returns HTTP 200 with {"ok": false, ...} for logical
-            # failures (bad chat_id, bot not in chat, blocked). raise_for_status
-            # does not catch those, so check the payload explicitly — otherwise
-            # a rejected message looks like a success and no card is delivered.
-            data = resp.json()
-            if not data.get("ok"):
-                print(f"[ERROR] Telegram sendMessage rejected: "
-                      f"{data.get('error_code')} {data.get('description')}", file=sys.stderr)
-                return False
-            return True
-        except Exception as e:
-            print(f"[ERROR] Failed to send Telegram message: {e}", file=sys.stderr)
-            return False
+        self.last_result = self._post_result("sendMessage", payload, 10)
+        return self.last_result.state == "accepted"
 
     def describe_chat(self) -> None:
         """Log which chat notifications are delivered to (startup diagnostic).
@@ -844,9 +862,9 @@ class TelegramNotifier:
         """Send an image card (cover) with an HTML caption."""
         if not self.bot_token or not self.chat_id:
             print("[WARN] Telegram not configured, skipping photo")
+            self.last_result = SendResult("rejected", "sendPhoto")
             return False
 
-        url = f"{self.api_url}/sendPhoto"
         payload = {
             "chat_id": self.chat_id,
             "photo": photo_url,
@@ -855,21 +873,8 @@ class TelegramNotifier:
         }
         if reply_markup:
             payload["reply_markup"] = reply_markup
-        try:
-            resp = requests.post(url, json=payload, timeout=15)
-            resp.raise_for_status()
-            # Telegram can answer HTTP 200 with {"ok": false, ...} — e.g. when it
-            # fails to fetch/hotlink the cover image, or the chat_id is wrong.
-            # Treat that as a failure so send_update falls back to a text card.
-            data = resp.json()
-            if not data.get("ok"):
-                print(f"[ERROR] Telegram sendPhoto rejected: "
-                      f"{data.get('error_code')} {data.get('description')}", file=sys.stderr)
-                return False
-            return True
-        except Exception as e:
-            print(f"[ERROR] Failed to send Telegram photo: {e}", file=sys.stderr)
-            return False
+        self.last_result = self._post_result("sendPhoto", payload, 15)
+        return self.last_result.state == "accepted"
 
     def answer_callback(self, callback_id: str, text: str = "") -> bool:
         """Acknowledge a button tap (shows a toast to the user)."""
@@ -983,31 +988,76 @@ class TelegramNotifier:
         return "\n".join(lines)
 
     def send_update(self, update: dict) -> bool:
+        if (not self.bot_token or not self.chat_id or
+                os.environ.get("BACKFILL_DRYRUN", "").strip().lower() in ("1", "true", "yes")):
+            return False
         manga = update["manga"]
-        # Button to add/remove this manga from bookmarks straight from the card
-        markup = self.bookmark_keyboard(manga.url, update.get("is_bookmarked", False))
-        # Preferred: image card with the cover
-        if getattr(manga, "cover_image", ""):
-            caption = self.format_update_caption(update)
-            if self.send_photo(manga.cover_image, caption, reply_markup=markup):
-                return True
-            print("[WARN] Photo card failed, falling back to text message")
-        # Fallback: rich text message (no cover available)
-        return self.send_message(self.format_update_message(update), reply_markup=markup)
+        try:
+            ledger = self.delivery_ledger()
+            items = [ledger.item("card", manga.url, c.number, manga.title) for c in update["new_chapters"]]
+
+            def send(selected):
+                numbers = {i["chapter"] for i in selected}
+                filtered = {**update, "new_chapters": [c for c in update["new_chapters"]
+                    if ledger.item("card", manga.url, c.number, manga.title)["chapter"] in numbers]}
+                markup = self.bookmark_keyboard(manga.url, update.get("is_bookmarked", False))
+                if getattr(manga, "cover_image", ""):
+                    if self.send_photo(manga.cover_image, self.format_update_caption(filtered), reply_markup=markup):
+                        return self.last_result
+                    if self.last_result.state != "rejected":
+                        return self.last_result
+                    print("[WARN] Photo explicitly rejected; trying text")
+                self.send_message(self.format_update_message(filtered), reply_markup=markup)
+                return self.last_result
+
+            return ledger.deliver(items, send, queue_favorites=bool(update.get("is_bookmarked")))
+        except (LedgerUnavailable, OSError, ValueError, TypeError):
+            print("[ERROR] Delivery evidence unavailable; notification held", file=sys.stderr)
+            return False
 
     def send_favorites_summary(self, fav_updates: list) -> bool:
-        """Send a separate summary listing bookmarked manga that updated."""
-        if not fav_updates:
-            return False
+        """Compatibility entry point; accepted cards already queued the events."""
+        return self.flush_favorites_summary()
+
+    @staticmethod
+    def _summary_text(items):
+        grouped = {}
+        for item in items:
+            grouped.setdefault(item["url"], []).append(item)
         lines = ["📌 <b>สรุปเรื่องโปรดที่อัปเดต</b>", ""]
-        for u in fav_updates:
-            m = u["manga"]
-            n = len(u["new_chapters"])
-            title = html_lib.escape(m.title)
-            lines.append(f'📖 <a href="{m.url}">{title}</a>')
-            lines.append(f"    └ +{n} ตอนใหม่ (ล่าสุด ตอนที่ {m.latest_chapter})")
-        lines += ["", f"⭐ ทั้งหมด {len(fav_updates)} เรื่อง  ·  ⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}"]
-        return self.send_message("\n".join(lines))
+        for url, group in grouped.items():
+            title = html_lib.escape(group[0]["title"][:160])
+            link = f'📖 <a href="{html_lib.escape(url, quote=True)}">{title}</a>'
+            lines.append(link if len(link) < 2000 else f"📖 <b>{title}</b>")
+            numbers = ", ".join(html_lib.escape(i["chapter"]) for i in group)
+            lines.append(f"    └ ตอนที่ {numbers}")
+        return "\n".join(lines)
+
+    def flush_favorites_summary(self) -> bool:
+        if (not self.bot_token or not self.chat_id or
+                os.environ.get("BACKFILL_DRYRUN", "").strip().lower() in ("1", "true", "yes")):
+            return False
+        try:
+            ledger = self.delivery_ledger()
+            pending = ledger.pending_favorites()
+            if not pending:
+                return True
+            # Drain one bounded batch per cycle, including after a restart with
+            # no new cards. A large backlog must not become one rejected message.
+            batch = []
+            for item in pending:
+                if batch and len(self._summary_text(batch + [item])) > 3500:
+                    break
+                batch.append(item)
+
+            def send(selected):
+                self.send_message(self._summary_text(selected))
+                return self.last_result
+
+            return ledger.deliver(batch, send)
+        except (LedgerUnavailable, OSError, ValueError, TypeError):
+            print("[ERROR] Summary evidence unavailable; summary held", file=sys.stderr)
+            return False
 
     def send_startup_message(self, tracked_count: int) -> bool:
         """Send startup notification"""
@@ -1193,6 +1243,10 @@ def process_telegram_commands(notifier: "TelegramNotifier", state: StateManager,
 
 # ============== MAIN ==============
 def main():
+    if os.environ.get("BACKFILL_DRYRUN", "").strip().lower() in ("1", "true", "yes"):
+        from bot_realtime import _preview
+        _preview()
+        return
     print("=" * 60)
     print("Go-Manga Update Monitor")
     print(f"Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -1256,13 +1310,11 @@ def main():
                 elif update.get("_commit"):
                     state.update_manga(*update["_commit"])
 
-            # Separate favourites summary
-            fav_updates = [u for u in updates if u.get("is_bookmarked")]
-            if telegram_ready and fav_updates:
-                notifier.send_favorites_summary(fav_updates)
         else:
             updates_found = 0
             print("[INFO] No new updates found")
+        if telegram_ready:
+            notifier.flush_favorites_summary()
 
     finally:
         # Persist Telegram offset; ensure bookmarks file exists so CI can commit it.
@@ -1278,7 +1330,9 @@ def main():
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) > 1 and sys.argv[1] == "test-msg":
+    if os.environ.get("BACKFILL_DRYRUN", "").strip().lower() in ("1", "true", "yes"):
+        main()
+    elif len(sys.argv) > 1 and sys.argv[1] == "test-msg":
         # Test message formatting
         state = StateManager(STATE_FILE)
         notifier = TelegramNotifier(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID)

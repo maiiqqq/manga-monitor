@@ -129,6 +129,11 @@ journalctl -u manga-bot -f
 ของ `BACKFILL_DRYRUN`, `CHECK_URLS` และ self-chain ที่ต้องแก้ก่อน replay จริง
 อย่าเปิด VM และ Actions ให้ส่งพร้อมกันระหว่างกู้คืน
 
+หลัง GM-007 อ่าน [การส่งและ Preview](docs/delivery-safety.md) เพิ่มเติม:
+เก็บ `delivery_state.json` ของ VM บน persistent disk และรักษาไฟล์นี้ระหว่างอัปเดต
+Actions ใช้ ledger บน master; ผลส่ง unknown จะถูกพักตรวจสอบ ไม่ retry อัตโนมัติ
+เมื่อ storage ขัดข้องหรือ ledger เต็ม ระบบจะพักการแจ้งเตือน
+
 ## อัปเดตโค้ดในอนาคต
 ```bash
 cd ~/manga-monitor && git pull && sudo systemctl restart manga-bot

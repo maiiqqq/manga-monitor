@@ -8,7 +8,7 @@ on:
   workflow_dispatch:  # Allow manual trigger
     inputs:
       backfill_today:
-        description: "Resend every manga that dropped a chapter (on backfill_date)"
+        description: "Check chapters on backfill_date; accepted delivery events are not resent"
         type: boolean
         default: false
       backfill_date:
@@ -16,7 +16,7 @@ on:
         type: string
         default: ""
       backfill_dryrun:
-        description: "List only (log the matches, do NOT send to Telegram)"
+        description: "Preview any mode: scrape only; no Telegram, state writes or self-chain"
         type: boolean
         default: false
       check_urls:
@@ -71,6 +71,8 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Persist delivery intent before sending; use the existing contents:write.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Loop long-polling for ~4 min each run, then hand off to the next
           # scheduled run. Ending well inside the 5-min cron slot leaves margin
           # so a delayed next run overlaps (and is queued) far less often, which
@@ -88,7 +90,7 @@ jobs:
 
       - name: Snapshot state for recovery
         id: snapshot_state
-        if: always()
+        if: always() && inputs.backfill_dryrun != true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -100,7 +102,7 @@ jobs:
 
       - name: Commit state changes (if any)
         id: persist_state
-        if: always() && steps.snapshot_state.outcome == 'success'
+        if: always() && inputs.backfill_dryrun != true && steps.snapshot_state.outcome == 'success'
         # The state files are JSON dicts, so a rejected push is resolved by
         # merging them per key on top of the current remote tip (merge_state.py)
         # instead of rebasing. A rebase hits a text conflict as soon as two runs
@@ -123,7 +125,7 @@ jobs:
 
       - name: Upload state recovery snapshot
         id: upload_state_recovery
-        if: always() && (steps.snapshot_state.outcome == 'failure' || steps.persist_state.outcome == 'failure' || steps.run_bot.outcome == 'failure')
+        if: always() && inputs.backfill_dryrun != true && (steps.snapshot_state.outcome == 'failure' || steps.persist_state.outcome == 'failure' || steps.run_bot.outcome == 'failure')
         continue-on-error: true  # Preserve the original failure if upload also fails
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -143,6 +145,7 @@ jobs:
         # Keep the existing PAT policy and best-effort */5 cron fallback.
         env:
           CHAIN_PAT: ${{ secrets.WORKFLOW_PAT }}
+          BACKFILL_DRYRUN: ${{ inputs.backfill_dryrun }}
           PERSISTENCE_OUTCOME: ${{ steps.persist_state.outcome }}
         run: |
           set -euo pipefail

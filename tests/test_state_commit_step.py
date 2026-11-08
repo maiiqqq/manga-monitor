@@ -24,7 +24,8 @@ def git(*args, cwd):
 
 class StateCommitStepTests(unittest.TestCase):
     def run_step(self, failure=None, change=True, state_overrides=None, bot_outcome="success",
-                 scenario=None, persist_budget=None, slow_copy=False, short_deadline=False):
+                 scenario=None, persist_budget=None, slow_copy=False, short_deadline=False, preview=False,
+                 remote_ledger=None):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         tmp = Path(self.tmp.name)
@@ -44,12 +45,21 @@ class StateCommitStepTests(unittest.TestCase):
             {"entry": {"last_check": "2026-01-01"}}, indent=2))
         (seed / "bookmarks.json").write_text("{}")
         (seed / "bot_state.json").write_text("{}")
+        if remote_ledger is not None:
+            (seed / "delivery_state.json").write_text('{"version":1,"entries":{}}')
         git("add", ".", cwd=seed)
         git("commit", "-m", "initial", cwd=seed)
         self.initial_sha = git("rev-parse", "HEAD", cwd=seed)
         git("remote", "add", "origin", str(remote), cwd=seed)
         git("push", "origin", "master", cwd=seed)
         git("clone", "-b", "master", str(remote), str(runner), cwd=tmp)
+        if remote_ledger is not None:
+            (seed / "delivery_state.json").write_text(json.dumps(remote_ledger))
+            git("add", "delivery_state.json", cwd=seed)
+            git("commit", "-m", "durable remote delivery evidence", cwd=seed)
+            git("push", "origin", "master", cwd=seed)
+            # The checkout still has the old empty ledger. Persistence must not
+            # stage it over newer remote evidence during its reset/merge.
         if change:
             (runner / "monitor_state.json").write_text(
                 '{"entry": {"last_check": "2026-01-02"}}\n')
@@ -112,7 +122,8 @@ class StateCommitStepTests(unittest.TestCase):
         def enabled(condition):
             steps = SimpleNamespace(**{k: SimpleNamespace(outcome=v) for k, v in outcomes.items()})
             return eval(condition.replace("&&", " and ").replace("||", " or "),
-                        {"__builtins__": {}}, {"always": lambda: True, "steps": steps})
+                        {"__builtins__": {}}, {"always": lambda: True, "steps": steps,
+                                              "inputs": SimpleNamespace(backfill_dryrun=preview), "true": True})
         snapshot = next((s for s in workflow["jobs"]["monitor"]["steps"]
                          if s.get("id") == "snapshot_state"), None)
         self.recovery_dir = tmp / "runner-temp/state-recovery-1234-2"
@@ -138,7 +149,29 @@ class StateCommitStepTests(unittest.TestCase):
         self.delays = [int(value) for value in (tmp / "sleeps.txt").read_text().splitlines()] \
             if (tmp / "sleeps.txt").exists() else []
         persisted = json.loads(git("show", "master:monitor_state.json", cwd=remote))
+        self.persisted_ledger = json.loads(git("show", "master:delivery_state.json", cwd=remote)) \
+            if remote_ledger is not None else None
         return result, persisted, tmp
+
+    def test_state_persistence_preserves_newer_remote_delivery_evidence(self):
+        from delivery_ledger import DeliveryLedger, LocalStore, SendResult
+        with tempfile.TemporaryDirectory() as folder:
+            store = LocalStore(Path(folder) / "ledger.json")
+            ledger = DeliveryLedger(store, "a" * 64)
+            item = ledger.item("card", "https://example.invalid/manga/fixture/", "11", "Fixture")
+            self.assertTrue(ledger.deliver([item], lambda _: SendResult("accepted", "sendMessage", 9)))
+            evidence = store.read()[0]
+        result, _, _ = self.run_step(remote_ledger=evidence)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.persisted_ledger, evidence)
+
+    def test_preview_skips_snapshot_persistence_and_artifact_even_on_bot_failure(self):
+        result, persisted, _ = self.run_step(bot_outcome="failure", preview=True)
+        self.assertEqual(result.stdout, "Persistence skipped")
+        self.assertEqual(persisted["entry"]["last_check"], "2026-01-01")
+        self.assertFalse(self.recovery_dir.exists())
+        self.assertFalse(self.backup_selected)
+        self.assertEqual(self.pushes, [])
 
     def test_server_error_remains_failure_and_is_not_reported_as_remote_moved(self):
         result, persisted, _ = self.run_step(

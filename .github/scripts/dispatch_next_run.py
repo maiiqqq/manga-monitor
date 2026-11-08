@@ -70,6 +70,8 @@ def github_request(method, url, token, payload=None):
 
 
 def dispatch_next(env, *, request, sleep):
+    if env.get("BACKFILL_DRYRUN", "").strip().lower() in ("1", "true", "yes"):
+        return DispatchResult("disabled", "preview_requested")
     token = env.get("CHAIN_PAT", "").strip()
     if not token:
         return DispatchResult("disabled", "workflow_pat_not_configured")
