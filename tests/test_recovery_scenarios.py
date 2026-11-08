@@ -194,6 +194,28 @@ class RecoveryScenarios(unittest.TestCase):
         self.assertEqual(self.chapter_on_disk(), "10")
         self.assertNotIn("notified", self.out.getvalue())
 
+    def test_targeted_first_seen_future_only_does_not_send_or_create_baseline(self):
+        self.path.write_text("{}")
+        self.manga.chapters[0].date = "2026-11-09"
+        self.run_main(CHECK_URLS=URL)
+        self.assertEqual(self.delivered, [])
+        self.assertEqual(json.loads(self.path.read_text()), {})
+
+    def test_targeted_future_only_does_not_lower_a_renumbered_baseline(self):
+        self.path.write_text(json.dumps({URL: baseline(20)}))
+        self.manga.chapters[0].date = "2026-11-09"
+        self.run_main(CHECK_URLS=URL)
+        self.assertEqual(self.delivered, [])
+        self.assertEqual(self.chapter_on_disk(), "20")
+
+    def test_targeted_mixed_dates_uses_latest_visible_chapter(self):
+        self.manga.chapters.insert(0, gm.Chapter("12", "Future chapter", URL + "12/", "2026-11-09"))
+        self.manga.latest_chapter = "12"
+        self.run_main(CHECK_URLS=URL)
+        self.assertEqual(len(self.delivered), 1)
+        self.assertEqual(self.chapter_on_disk(), "11")
+        self.assertNotIn(URL + "12/", self.delivered[0][1]["text"])
+
     def test_backfill_preview_has_no_telegram_calls_or_state_writes(self):
         original = self.path.read_bytes()
         update = {"manga": self.manga, "new_chapters": self.manga.chapters}
