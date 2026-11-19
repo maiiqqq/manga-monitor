@@ -133,9 +133,9 @@
   },
   "https://www.go-manga.com/tutorial-too-hard/": {
     "title": "The Tutorial is Too Hard โลกฝึกสอนสุดโหดร้าย",
-    "last_chapter": "296",
-    "last_chapter_date": "2026-11-11",
-    "last_check": "2026-11-12T00:20:39.200770"
+    "last_chapter": "297",
+    "last_chapter_date": "2026-11-19",
+    "last_check": "2026-11-19T22:43:29.959934"
   },
   "https://www.go-manga.com/disastrous-necromancer/": {
     "title": "Disastrous Necromancer ราชันนักอัญเชิญวิญญาณ",
@@ -145,9 +145,9 @@
   },
   "https://www.go-manga.com/absolute-regression/": {
     "title": "Absolute Regression ย้อนชะตาล่าข้ามภพ",
-    "last_chapter": "127",
-    "last_chapter_date": "2026-11-15",
-    "last_check": "2026-11-15T02:08:48.879569"
+    "last_chapter": "128",
+    "last_chapter_date": "2026-11-19",
+    "last_check": "2026-11-19T22:43:26.022198"
   },
   "https://www.go-manga.com/killer-peter/": {
     "title": "Killer Peter ปีเตอร์โคตรนักฆ่า",
@@ -181,9 +181,9 @@
   },
   "https://www.go-manga.com/lookism/": {
     "title": "Lookism",
-    "last_chapter": "634",
-    "last_chapter_date": "2026-11-13",
-    "last_check": "2026-11-13T23:55:03.797291"
+    "last_chapter": "635",
+    "last_chapter_date": "2026-11-19",
+    "last_check": "2026-11-19T22:43:01.262809"
   },
   "https://www.go-manga.com/pick-me-up/": {
     "title": "Pick Me Up, Infinite Gacha",
@@ -193,9 +193,9 @@
   },
   "https://www.go-manga.com/solo-farming-tower/": {
     "title": "Solo Farming In The Tower",
-    "last_chapter": "151",
-    "last_chapter_date": "2026-11-11",
-    "last_check": "2026-11-12T00:20:31.081829"
+    "last_chapter": "152",
+    "last_chapter_date": "2026-11-19",
+    "last_check": "2026-11-19T22:43:21.957492"
   },
   "https://www.go-manga.com/star-swordmaster/": {
     "title": "Star-Embracing Swordmaster ยอดนักดาบผู้โอบอุ้มดารา",
@@ -229,15 +229,15 @@
   },
   "https://www.go-manga.com/heavenly-demon-cant/": {
     "title": "The Heavenly Demon Can’t Live a Normal Life มารสวรรค์จะมีชีวิตธรรมดาไม่ได้หรอก",
-    "last_chapter": "209",
-    "last_chapter_date": "2026-08-10",
-    "last_check": "2026-08-10T17:16:35.456949"
+    "last_chapter": "210",
+    "last_chapter_date": "2026-11-19",
+    "last_check": "2026-11-19T22:43:13.498367"
   },
   "https://www.go-manga.com/only-have-ex-summon/": {
     "title": "Only I Have an EX-Grade Summon ฉันคือผู้อัญเชิญระดับแรงก์ EX",
-    "last_chapter": "45",
-    "last_chapter_date": "2026-10-30",
-    "last_check": "2026-10-30T10:26:51.947499"
+    "last_chapter": "47",
+    "last_chapter_date": "2026-11-19",
+    "last_check": "2026-11-19T22:43:17.806034"
   },
   "https://www.go-manga.com/magic-emperor/": {
     "title": "Magic Emperor ราชาจอมเวทย์",
@@ -1045,9 +1045,9 @@
   },
   "https://www.go-manga.com/genius-blacksmiths-game/": {
     "title": "The Genius Blacksmith’s Game เกมเปลี่ยนโลกของช่างตีเหล็กในตำนาน",
-    "last_chapter": "73",
-    "last_chapter_date": "2026-11-17",
-    "last_check": "2026-11-17T22:42:08.413452"
+    "last_chapter": "75",
+    "last_chapter_date": "2026-11-19",
+    "last_check": "2026-11-19T22:43:05.462965"
   },
   "https://www.go-manga.com/absolute-modern-life/": {
     "title": "The Absolute’s Modern Life ชีวิตใหม่ของฮันเตอร์ในตำนานกับเหล่ามอนสเตอร์คู่ใจ",
@@ -1096,5 +1096,11 @@
     "last_chapter": "21",
     "last_chapter_date": "2026-11-16",
     "last_check": "2026-11-16T22:17:27.937134"
+  },
+  "https://www.go-manga.com/return-disaster-class-hero/": {
+    "title": "The Return of the Disaster-Class Hero",
+    "last_chapter": "166",
+    "last_chapter_date": "2026-11-19",
+    "last_check": "2026-11-19T22:43:09.623866"
   }
 }
