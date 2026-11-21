@@ -463,9 +463,9 @@
   },
   "https://www.go-manga.com/legendary-youngest-marquis/": {
     "title": "Legendary Youngest Son of the Marquis House",
-    "last_chapter": "182",
-    "last_chapter_date": "2026-11-07",
-    "last_check": "2026-11-07T23:32:59.146453"
+    "last_chapter": "183",
+    "last_chapter_date": "2026-11-21",
+    "last_check": "2026-11-21T22:29:59.876826"
   },
   "https://www.go-manga.com/standard-reincarnation/": {
     "title": "Standard of Reincarnation",
@@ -595,9 +595,9 @@
   },
   "https://www.go-manga.com/solo-max-level-newbie/": {
     "title": "Solo Max-Level Newbie ผู้เล่นหน้าใหม่เลเวลแมกซ์",
-    "last_chapter": "285",
-    "last_chapter_date": "2026-11-15",
-    "last_check": "2026-11-15T02:09:35.049855"
+    "last_chapter": "286",
+    "last_chapter_date": "2026-11-21",
+    "last_check": "2026-11-21T22:29:51.963094"
   },
   "https://www.go-manga.com/third-prince-fallen/": {
     "title": "The Third Prince of the Fallen Kingdom has Regressed การหวนคืนของเจ้าชายสามแห่งอาณาจักรที่ล่มสลาย",
@@ -751,9 +751,9 @@
   },
   "https://www.go-manga.com/former-supreme/": {
     "title": "The Former Supreme ตำนานผู้ไร้พ่ายหวนคืนยุทธภพ",
-    "last_chapter": "22",
-    "last_chapter_date": "2026-10-30",
-    "last_check": "2026-10-30T22:04:05.405246"
+    "last_chapter": "25",
+    "last_chapter_date": "2026-11-21",
+    "last_check": "2026-11-21T22:29:55.855640"
   },
   "https://www.go-manga.com/drawing-saikyou-mangaka/": {
     "title": "Drawing: Saikyou Mangaka wa Oekaki Skill de Isekai Musou Suru! นักวาดมังงะผู้ไร้เทียมทาน ณ แดนต่างโลก",
@@ -931,15 +931,15 @@
   },
   "https://www.go-manga.com/city-god-grandmaster/": {
     "title": "City God Level Grandmaster เซียนสวรรค์คืนชีพครองเมือง",
-    "last_chapter": "26",
-    "last_chapter_date": "2026-10-06",
-    "last_check": "2026-10-06T02:18:48.320143"
+    "last_chapter": "32",
+    "last_chapter_date": "2026-11-21",
+    "last_check": "2026-11-21T22:29:47.767006"
   },
   "https://www.go-manga.com/genius-professor-easy-life/": {
     "title": "The Genius Professor Wants An Easy Life ศาสตราจารย์อัจฉริยะผู้อยากใช้ชีวิตสุดสบาย",
-    "last_chapter": "27",
-    "last_chapter_date": "2026-11-07",
-    "last_check": "2026-11-07T23:33:49.744189"
+    "last_chapter": "28",
+    "last_chapter_date": "2026-11-21",
+    "last_check": "2026-11-21T22:30:03.843107"
   },
   "https://www.go-manga.com/myst-might-mayhem/": {
     "title": "Myst Might Mayhem",
@@ -1108,5 +1108,11 @@
     "last_chapter": "55",
     "last_chapter_date": "2026-11-21",
     "last_check": "2026-11-21T09:55:26.128222"
+  },
+  "https://www.go-manga.com/reincarnation-of-suicidal-battle/": {
+    "title": "Reincarnation of the Suicidal Battle God เกิดใหม่นักรบพันธุ์ระห่ำ",
+    "last_chapter": "101",
+    "last_chapter_date": "2026-11-21",
+    "last_check": "2026-11-21T22:29:43.786750"
   }
 }
